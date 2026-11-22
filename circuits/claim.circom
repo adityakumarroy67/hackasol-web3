@@ -81,8 +81,6 @@ template Claim(HOSPITAL_DEPTH, COVERED_DEPTH) {
     signal input coveredPath[COVERED_DEPTH];
     signal input coveredPathIndices[COVERED_DEPTH];
 
-    signal output valid;
-
     // Amounts use 128 bits so common token precisions have sufficient range.
     // The settlement contract must reject amounts above this circuit range.
     component claimAmountBits = Num2Bits(128);
@@ -204,15 +202,13 @@ template Claim(HOSPITAL_DEPTH, COVERED_DEPTH) {
     hospitalSignatureCheck.R8y <== hospitalSignatureR8y;
     hospitalSignatureCheck.M <== signedClaimHash.out;
 
-    // Require every rule check to pass. Keeping these as separate constraints
-    // avoids a non-quadratic multiplication of several signals in one equation.
+    // Require every rule check to pass. If any check fails, no proof can be made.
+    // (No "valid" output: it would always be 1 and only shift the public signal order.)
     startPassed.out === 1;
     expiryNotReached.out === 1;
     dateNotInFuture.out === 1;
     amountWithinLimit.out === 1;
     amountIsPositive.out === 1;
-    valid <== 1;
-    valid === 1;
 }
 
 component main {public [approvedHospitalRoot, policyCommitment, claimNullifier, claimAmount, hospitalPayoutAddress, claimSubmissionTime, chainId, verifyingContract]} = Claim(8, 5);

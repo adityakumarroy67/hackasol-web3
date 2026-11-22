@@ -8,9 +8,11 @@
     "dev": "vite",
     "build": "vite build",
     "chain": "hardhat node",
+    "demo": "hardhat run scripts/demo.ts",
     "circuit": "node scripts/build-circuit.js",
     "test": "hardhat test",
-    "test:app": "node --test \"app/src/**/*.test.js\""
+    "test:app": "node --test \"app/src/**/*.test.js\"",
+    "test:circuit": "node --test \"circuits/test/*.test.js\""
   },
   "engines": {
     "node": ">=24 <25"
