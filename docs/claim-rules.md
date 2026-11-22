@@ -55,7 +55,7 @@ The exact signature method still needs research and design; this requirement is 
 
 - `claimAmount`
 - `policyCommitment`
-- `claimNullifier` — a one-use code the proof derives for this claim
+- 'claimNullifier' — a unique value for this claim that the contract records after payment, so the same claim cannot be paid again.
 - `approvedHospitalRoot` — the public fingerprint of the approved-hospital list
 
 ### Private
