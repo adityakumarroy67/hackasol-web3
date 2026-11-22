@@ -1,36 +1,27 @@
-# Secrets — never commit (Web3 track rule: no keys/seeds/API secrets)
+node_modules/
+dist/
+artifacts/
+cache/
+coverage/
 .env
 .env.*
 !.env.example
 *.key
 *.pem
-
-# Deps / builds
-node_modules/
-dist/
-build/
-.next/
-out/
-coverage/
-
-# Contract toolchains
-artifacts/
-cache/
-typechain-types/
-broadcast/
-
-# Misc
-.DS_Store
-*.log
-hackoosolf.pdf
-Hackasol_5.0_Problem_Statement.pdf
-
-# ZK build outputs (regenerate from circuits)
-*.ptau
-*.zkey
+*.secret
+*.enc
 *.r1cs
+<<<<<<< HEAD
+*.wasm
+*.zkey
+*.ptau
+=======
 *.wtns
 *.sym
 *_js/
 *_cpp/
 web3insurancearchitecture.txt
+<<<<<<< Updated upstream
+=======
+>>>>>>> 8248ee7237841e6c8c31cdbc41230d734b2b8724
+>>>>>>> Stashed changes
