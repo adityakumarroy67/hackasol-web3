@@ -4,33 +4,32 @@
 !.env.example
 *.key
 *.pem
+*.secret
+*.enc
 
 # Deps / builds
 node_modules/
 dist/
 build/
-.next/
-out/
 coverage/
-
-# Contract toolchains
 artifacts/
 cache/
 typechain-types/
-broadcast/
 
-# Misc
-.DS_Store
-*.log
-hackoosolf.pdf
-Hackasol_5.0_Problem_Statement.pdf
-
-# ZK build outputs (regenerate from circuits)
+# ZK build outputs (regenerate with: npm run circuit claim)
+circuits/build/
 *.ptau
 *.zkey
 *.r1cs
+*.wasm
 *.wtns
 *.sym
 *_js/
 *_cpp/
+
+# Local-only files
+.DS_Store
+*.log
+hackoosolf.pdf
+Hackasol_5.0_Problem_Statement.pdf
 web3insurancearchitecture.txt
