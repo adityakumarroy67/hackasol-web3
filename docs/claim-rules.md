@@ -59,8 +59,11 @@ The exact signature method still needs research and design; this requirement is 
 - `approvedHospitalRoot` — the public fingerprint of the approved-hospital list
 
 ### Private
-
+policyStartDate ≤ claimDate < policyExpiryDate
 - Procedure code and claim date
+- The proof must show that the private policy dates, limit, and covered procedures match the terms
+represented by the public policyCommitment
+- The insurer must create or approve the policyCommitment from the policy terms and confirm that it belongs to an active policy.
 - Policy expiry date, limit, and covered-procedure information
 - Hospital details and its proof of membership in the approved list
 - Policy details and the secret value used to create its commitment
