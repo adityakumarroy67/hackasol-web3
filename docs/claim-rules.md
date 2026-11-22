@@ -48,3 +48,28 @@ A zero-knowledge proof can show that the supplied facts follow the policy rules.
 - The proof must connect those authenticated facts to the claim amount and private treatment details.
 
 The exact signature method still needs research and design; this requirement is not yet implemented or validated.
+
+## Proof inputs — draft
+
+### Public
+
+- `claimAmount`
+- `policyCommitment`
+- `claimNullifier` — a one-use code the proof derives for this claim
+- `approvedHospitalRoot` — the public fingerprint of the approved-hospital list
+
+### Private
+
+- Procedure code and claim date
+- Policy expiry date, limit, and covered-procedure information
+- Hospital details and its proof of membership in the approved list
+- Policy details and the secret value used to create its commitment
+- Information needed to check the hospital's claim signature and the insurer's policy approval; exact method still undecided
+
+The diagnosis, prescriptions, treatment history, and full record should stay encrypted off-chain. Include them in the proof only if a specific rule requires them.
+
+### Open design points
+
+- The policy commitment must not reveal a patient identity or make claims easy to link together.
+- The nullifier must be derived so the same claim always gets the same value.
+- The signature method and exact input encoding are not selected yet.
