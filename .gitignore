@@ -1,0 +1,25 @@
+# Secrets — never commit (Web3 track rule: no keys/seeds/API secrets)
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+
+# Deps / builds
+node_modules/
+dist/
+build/
+.next/
+out/
+coverage/
+
+# Contract toolchains
+artifacts/
+cache/
+typechain-types/
+broadcast/
+
+# Misc
+.DS_Store
+*.log
+hackoosolf.pdf
