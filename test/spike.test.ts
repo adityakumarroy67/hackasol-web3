@@ -3,7 +3,7 @@ import { network } from "hardhat";
 import * as snarkjs from "snarkjs";
 import { buildPoseidon } from "circomlibjs";
 
-const { ethers } = await network.connect();
+const { ethers } = await network.create();
 
 // snarkjs proof -> [a, b, c, publicSignals] in the verifier's argument format
 export async function toCalldata(proof: any, publicSignals: string[]) {

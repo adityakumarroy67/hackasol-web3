@@ -32,7 +32,16 @@ A hospital proves to an insurer, with a zero-knowledge proof, that a claim is va
 - Storage: encrypted records (AES-GCM, Web Crypto) on IPFS
 
 ## Setup
-TBD
+Requirements: Node 24, [circom 2.2.3](https://github.com/iden3/circom/releases/tag/v2.2.3).
+
+```bash
+npm ci
+npm run circuit claim     # compile circuit, Groth16 setup (PSE Perpetual Powers of Tau), export ClaimVerifier.sol
+npm test                  # Hardhat: circuit + contract tests
+npm run test:app          # frontend unit tests
+```
+
+> **Windows note:** if Smart App Control / Application Control blocks Hardhat's native binary (`edr.win32-x64-msvc.node`), run the commands inside WSL2 (Ubuntu) with Linux Node + circom installed.
 
 ## Deployed Contracts (testnet)
 | Contract | Network | Address / Explorer (verified) |
