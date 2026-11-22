@@ -12,7 +12,7 @@ A hospital proves to an insurer, with a zero-knowledge proof, that a claim is va
 
 ## Requirements checklist (from W3-01)
 - [ ] ZK proof that the hospital is on the approved list (Merkle membership)
-- [ ] ZK proof that the policy is active (policy expiry > claim date)
+- [ ] ZK proof that the policy is active (policy start ≤ claim date < policy expiry)
 - [ ] ZK proof that the procedure is in the covered set and amount ≤ policy limit
 - [ ] Contract verifies the proof, rejects replays (nullifier), and auto-releases payment
 - [ ] Records encrypted off-chain (IPFS or encrypted storage), only hashes on-chain
@@ -21,8 +21,10 @@ A hospital proves to an insurer, with a zero-knowledge proof, that a claim is va
 - [ ] Architecture + privacy threat-model diagram (on-chain vs off-chain)
 - [ ] Bonus: on-chain audit trail · break-glass emergency access · FHIR-compatible records
 
-**Public inputs:** claim amount, policy commitment, claim nullifier, approved-hospital Merkle root.
-**Private inputs:** diagnosis, procedure code, prescriptions, treatment history, record contents.
+**Public inputs:** claim amount (128-bit integer in token base units), policy commitment, claim nullifier, approved-hospital Merkle root, approved hospital's payout address, claim submission time (UTC Unix seconds), chain ID, and verifier contract address.
+**Private proof inputs:** claim date and policy terms, procedure code, claim ID, hospital signature data, and membership witnesses. Diagnosis, prescriptions, treatment history, and record contents stay encrypted off-chain and are not part of this claim circuit.
+
+**Local payment convention:** use one mock tINR ERC-20 with 2 decimal places, so amounts are integer paise. Each settlement deployment supports one fixed token. The real payment asset remains a separate decision.
 
 ## Tech Stack (planned)
 - Circuits: Circom 2 + circomlib (Poseidon, Merkle, comparators), Groth16 via snarkjs
