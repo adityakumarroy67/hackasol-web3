@@ -1,0 +1,35 @@
+# Run the project the same way on every laptop: no WSL setup, no Windows Hardhat block.
+#
+#   docker compose up -d ipfs                    # start the local IPFS node (keeps running)
+#   docker compose run --rm dev npm ci           # first time only: install packages
+#   docker compose run --rm dev npm test         # then any project command, e.g. npm run demo
+#
+services:
+  ipfs:
+    # Local IPFS node (Kubo). Runs OFFLINE: files stay on this laptop and no peer-to-peer
+    # traffic uses the shared venue Wi-Fi. Remove "--offline" to join the public IPFS network.
+    image: ipfs/kubo:v0.43.1
+    command: ["daemon", "--migrate=true", "--offline"]
+    ports:
+      - "127.0.0.1:5001:5001" # IPFS API (upload/download), reachable only from this laptop
+      - "127.0.0.1:8080:8080" # gateway: http://127.0.0.1:8080/ipfs/<cid> shows a stored (encrypted) file
+    volumes:
+      - ipfs-data:/data/ipfs
+    restart: unless-stopped
+
+  dev:
+    # Node 24 + circom on Linux: runs Hardhat, tests, circuit builds and the demo.
+    build: .
+    working_dir: /app
+    volumes:
+      - .:/app
+      - node-modules:/app/node_modules # Linux packages, kept apart from the Windows folder
+      - tool-cache:/root/.cache # Solidity compiler downloads, kept between runs
+    environment:
+      IPFS_API: http://ipfs:5001
+    depends_on: [ipfs]
+
+volumes:
+  ipfs-data:
+  node-modules:
+  tool-cache:

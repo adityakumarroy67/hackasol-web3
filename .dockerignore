@@ -1,0 +1,3 @@
+# The Dockerfile copies nothing (the project is mounted when the container runs),
+# so send nothing to the image builder.
+*

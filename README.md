@@ -31,19 +31,37 @@ A hospital proves to an insurer, with a zero-knowledge proof, that a claim is va
 - Contracts: Solidity + Hardhat, snarkjs-generated Groth16 verifier
 - Chain: Ethereum Sepolia testnet (local Hardhat node for dev)
 - Frontend: React + Vite + ethers.js, in-browser proof generation with snarkjs
-- Storage: encrypted records (AES-GCM, Web Crypto) on IPFS
+- Storage: records encrypted with AES-256-GCM, record keys shared per person with X25519 (Web Crypto); encrypted files on IPFS (local Kubo node in Docker); only content IDs and wrapped keys on-chain
+- Dev environment: Docker Compose (Node 24 + circom toolbox, IPFS node)
 
 ## Setup
+
+### Option A: Docker (recommended, and the same on every laptop)
+Requirements: [Docker Desktop](https://www.docker.com/products/docker-desktop/) (free for personal and education use). No Node, circom or WSL setup needed.
+
+```bash
+docker compose up -d ipfs                        # local IPFS node (offline: files stay on this laptop)
+docker compose run --rm dev npm ci               # first time only: install packages
+docker compose run --rm dev npm run test:circuit # 18 circuit tests
+docker compose run --rm dev npm run test:records # encryption tests, including a real-IPFS round trip
+docker compose run --rm dev npm test             # contract tests (Hardhat)
+docker compose run --rm dev npm run demo         # end-to-end demo, writes docs/demo-report.md
+```
+Open `http://127.0.0.1:8080/ipfs/<cid>` to see an encrypted record as IPFS stores it (unreadable without the key).
+
+### Option B: Native
 Requirements: Node 24, [circom 2.2.3](https://github.com/iden3/circom/releases/tag/v2.2.3).
 
 ```bash
 npm ci
-npm run circuit claim     # compile circuit, Groth16 setup (PSE Perpetual Powers of Tau), export ClaimVerifier.sol
-npm test                  # Hardhat: circuit + contract tests
-npm run test:app          # frontend unit tests
+npm run test:circuit && npm run test:records && npm test && npm run demo
 ```
+Without an IPFS node, the demo stores encrypted files in a local `.storage/` folder. It's clearly labelled, and the content IDs are the same as IPFS's.
 
-> **Windows note:** if Smart App Control / Application Control blocks Hardhat's native binary (`edr.win32-x64-msvc.node`), run the commands inside WSL2 (Ubuntu) with Linux Node + circom installed.
+> **Windows note:** if Smart App Control / Application Control blocks Hardhat's native binary (`edr.win32-x64-msvc.node`), use Option A (Docker) or run inside WSL2.
+
+### Rebuilding the circuit (one person only)
+`npm run circuit claim` recompiles the circuit and creates a **new random proving key and a new `contracts/ClaimVerifier.sol`**. The two must match, so only one person rebuilds for the final version, and everyone else uses the committed files.
 
 ## Deployed Contracts (testnet)
 | Contract | Network | Address / Explorer (verified) |
@@ -57,7 +75,18 @@ TBD
 TBD
 
 ## Credits
-Libraries, frameworks and templates used (with licences): TBD
+| Used for | Project | Licence |
+|---|---|---|
+| ZK circuit compiler | [circom](https://github.com/iden3/circom) 2.2.3 | GPL-3.0 |
+| Circuit building blocks (Poseidon, EdDSA, comparators) | [circomlib](https://github.com/iden3/circomlib) | GPL-3.0 |
+| Proof generation & Solidity verifier | [snarkjs](https://github.com/iden3/snarkjs) | GPL-3.0 |
+| Poseidon / EdDSA in JavaScript | [circomlibjs](https://github.com/iden3/circomlibjs) | GPL-3.0 |
+| Trusted-setup file (Powers of Tau, 2^15) | [PSE Perpetual Powers of Tau](https://github.com/privacy-scaling-explorations/perpetualpowersoftau), 80 contributions | public ceremony output |
+| ERC-20 token base | [OpenZeppelin Contracts](https://github.com/OpenZeppelin/openzeppelin-contracts) 5 | MIT |
+| Contract development & tests | [Hardhat](https://hardhat.org) 3, [ethers](https://ethers.org) 6 | MIT |
+| Local IPFS node | [Kubo](https://github.com/ipfs/kubo) v0.43.1 (Docker image) | MIT / Apache-2.0 |
+| Frontend | [React](https://react.dev), [Vite](https://vite.dev) | MIT |
+| Encryption | Web Crypto API (built into browsers and Node.js): AES-256-GCM, X25519, HKDF | n/a |
 
 ## AI Disclosure
 AI coding assistant used: Claude Code (Anthropic) for scaffolding and code generation. All team members reviewed and can explain the code.

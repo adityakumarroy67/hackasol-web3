@@ -12,7 +12,8 @@
     "circuit": "node scripts/build-circuit.js",
     "test": "hardhat test",
     "test:app": "node --test \"app/src/**/*.test.js\"",
-    "test:circuit": "node --test \"circuits/test/*.test.js\""
+    "test:circuit": "node --test \"circuits/test/*.test.js\"",
+    "test:records": "node --test lib/records.test.js"
   },
   "engines": {
     "node": ">=24 <25"
