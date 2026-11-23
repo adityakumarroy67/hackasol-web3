@@ -5,7 +5,7 @@
 //                             contracts/<Name>Verifier.sol (on-chain proof checker)
 import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
 const name = process.argv[2] ?? "claim";
 const Name = name[0].toUpperCase() + name.slice(1);
@@ -36,4 +36,10 @@ snarkjs("zkey", "export", "solidityverifier", `${out}/${name}.zkey`, `${out}/ver
 const sol = readFileSync(`${out}/verifier.sol`, "utf8").replace("contract Groth16Verifier", `contract ${Name}Verifier`);
 mkdirSync("contracts", { recursive: true });
 writeFileSync(`contracts/${Name}Verifier.sol`, sol);
-console.log(`Built ${name}: contracts/${Name}Verifier.sol`);
+
+// The website proves in the browser with the same files (they must match the verifier above).
+mkdirSync("app/public/zk", { recursive: true });
+copyFileSync(`${out}/${name}_js/${name}.wasm`, `app/public/zk/${name}.wasm`);
+copyFileSync(`${out}/${name}.zkey`, `app/public/zk/${name}.zkey`);
+copyFileSync(`${out}/${name}_vkey.json`, `app/public/zk/${name}_vkey.json`);
+console.log(`Built ${name}: contracts/${Name}Verifier.sol + app/public/zk/`);

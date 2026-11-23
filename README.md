@@ -39,15 +39,39 @@ A hospital proves to an insurer, with a zero-knowledge proof, that a claim is va
 ### Option A: Docker (recommended, and the same on every laptop)
 Requirements: [Docker Desktop](https://www.docker.com/products/docker-desktop/) (free for personal and education use). No Node, circom or WSL setup needed.
 
+**Run the website**
 ```bash
-docker compose up -d ipfs                        # local IPFS node (offline: files stay on this laptop)
-docker compose run --rm dev npm ci               # first time only: install packages
-docker compose run --rm dev npm run test:circuit # 18 circuit tests
-docker compose run --rm dev npm run test:records # encryption tests, including a real-IPFS round trip
-docker compose run --rm dev npm test             # contract tests (Hardhat)
-docker compose run --rm dev npm run demo         # end-to-end demo, writes docs/demo-report.md
+docker compose run --rm dev npm ci                # first time only: install packages
+docker compose up -d                              # IPFS node + local blockchain + website
+docker compose run --rm dev npm run deploy:local  # put the contracts on the local blockchain
+```
+Open **http://localhost:5173** and choose **Local test accounts**. No wallet is needed: switch between insurer, hospitals, patients and a doctor from the top bar. The local chain resets when its container restarts; run `deploy:local` again after that.
+
+**Demo story (about 3 minutes):**
+1. **Hospital tab:** each hospital clicks "Create signing key". Dr. Rao clicks "Publish my encryption key".
+2. **Patient tab** (Aarav): "Unlock my locker".
+3. **Insurer tab:** tick both hospitals → "Save approved list on-chain", then issue a policy to Aarav.
+4. **Patient tab:** "Share with hospital" (Sanjeevani).
+5. **Hospital tab** (Sanjeevani): write an encrypted record, then "Create proof & send to patient". The proof is made in the browser in about 2 s.
+6. **Patient tab:** "Approve & submit claim". The contract verifies the proof and pays. "Try to submit again" is refused.
+7. Share the record with Dr. Rao, open it as Dr. Rao, then revoke. The access history shows every step.
+8. **Insurer tab:** the paid claim, "verified on-chain", with no medical data.
+
+**Tests**
+```bash
+docker compose run --rm dev npm run test:circuit  # 20 circuit tests
+docker compose run --rm dev npm run test:records  # encryption tests, including a real-IPFS round trip
+docker compose run --rm dev npm test              # 21 contract + website-interface tests (Hardhat)
+docker compose run --rm dev npm run demo          # scripted end-to-end demo, writes docs/demo-report.md
+node scripts/ui-test.mjs                          # clicks through the whole website in headless Chrome (run on the host)
 ```
 Open `http://127.0.0.1:8080/ipfs/<cid>` to see an encrypted record as IPFS stores it (unreadable without the key).
+
+**Deploy (needs `.env`; copy `.env.example` and fill it in. Never commit it.)**
+```bash
+docker compose run --rm dev npm run deploy:sepolia  # contracts on the Sepolia testnet
+docker compose run --rm dev npm run pages:deploy    # build the website and publish it on Cloudflare Pages
+```
 
 ### Option B: Native
 Requirements: Node 24, [circom 2.2.3](https://github.com/iden3/circom/releases/tag/v2.2.3).

@@ -26,6 +26,9 @@ circuits/build/
 *.sym
 *_js/
 *_cpp/
+# ...except the final proof files the website serves. They must match contracts/ClaimVerifier.sol.
+!app/public/zk/*.wasm
+!app/public/zk/*.zkey
 
 # Local-only files
 .DS_Store
@@ -35,3 +38,4 @@ Hackasol_5.0_Problem_Statement.pdf
 web3insurancearchitecture.txt
 types/
 .storage/
+ui-test-output/

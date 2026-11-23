@@ -8,6 +8,9 @@
     "dev": "vite",
     "build": "vite build",
     "chain": "hardhat node",
+    "deploy:local": "hardhat run scripts/deploy.ts --network localhost",
+    "deploy:sepolia": "hardhat run scripts/deploy.ts --network sepolia",
+    "pages:deploy": "vite build && wrangler pages deploy app/dist --project-name insuretrust --branch main",
     "demo": "hardhat run scripts/demo.ts",
     "circuit": "node scripts/build-circuit.js",
     "test": "hardhat test",
@@ -22,6 +25,8 @@
     "esbuild@0.28.2": true
   },
   "dependencies": {
+    "@zk-kit/baby-jubjub": "^1.0.3",
+    "poseidon-lite": "^0.3.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
@@ -45,12 +50,12 @@
     "@vitejs/plugin-react": "^5.0.0",
     "chai": "^5.3.3",
     "circomlib": "^2.0.5",
-    "circomlibjs": "^0.1.7",
     "ethers": "^6.17.0",
     "hardhat": "^3.22.0",
     "mocha": "^12.0.3",
     "snarkjs": "^0.7.6",
     "typescript": "^5.9.0",
-    "vite": "^7.0.0"
+    "vite": "^7.0.0",
+    "wrangler": "^4.158.0"
   }
 }

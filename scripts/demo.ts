@@ -13,7 +13,6 @@ const DAY = 86_400n;
 const rupees = (paise: bigint) => "₹" + (Number(paise) / 100).toLocaleString("en-IN");
 const short = (x: string | bigint) => { const s = typeof x === "bigint" ? "0x" + x.toString(16) : x; return s.slice(0, 8) + "…" + s.slice(-4); };
 
-await C.init();
 
 // ---------- people & organisations (fictional) ----------
 const [insurer, aarav, meera, kabir, ishita, sanjeevaniWallet, narmadaWallet, unlistedWallet, drRao, stranger] = await ethers.getSigners();
@@ -28,9 +27,9 @@ function reasonOf(e: any, contract: any) {
   if (e.name === "OperationError") return "Cannot unlock: the key was not made for this person";
   return e.shortMessage ?? e.message ?? "failed";
 }
-const sanjeevani = { name: "Sanjeevani Multispeciality (fictional)", ...C.makeHospital(new Uint8Array(32).fill(11), sanjeevaniWallet.address) };
-const narmada = { name: "Narmada Heart Institute (fictional)", ...C.makeHospital(new Uint8Array(32).fill(12), narmadaWallet.address) };
-const unlisted = { name: "Unlisted Clinic (NOT approved)", ...C.makeHospital(new Uint8Array(32).fill(13), unlistedWallet.address) };
+const sanjeevani = { name: "Sanjeevani Multispeciality (fictional)", ...(await C.makeHospital(new Uint8Array(32).fill(11), sanjeevaniWallet.address)) };
+const narmada = { name: "Narmada Heart Institute (fictional)", ...(await C.makeHospital(new Uint8Array(32).fill(12), narmadaWallet.address)) };
+const unlisted = { name: "Unlisted Clinic (NOT approved)", ...(await C.makeHospital(new Uint8Array(32).fill(13), unlistedWallet.address)) };
 const approved = [sanjeevani, narmada];
 
 const PROCEDURES: Record<string, string> = { "4401": "Appendectomy", "4402": "Cataract surgery", "5001": "Angioplasty", "6101": "Knee replacement", "9999": "Cosmetic surgery" };
@@ -63,7 +62,7 @@ let n = 0;
 const proofs = new Map<string, any>();
 
 async function makeProof(p: typeof patients[number], hospital: typeof sanjeevani, claimId: bigint, procedureCode: bigint, amountRupees: number, daysAgo: bigint) {
-  const input = C.buildClaim({
+  const input = await C.buildClaim({
     hospital, hospitals: approved, policy: p.policy, claimId, procedureCode,
     claimDate: now - daysAgo * DAY, claimAmount: BigInt(amountRupees * 100), claimSubmissionTime: now - 60n,
     chainId: 31337n, verifyingContract: contractAddress,
@@ -83,7 +82,13 @@ async function attempt(o: { key?: string; reuse?: string; patient: typeof patien
   if (o.reuse) made = proofs.get(o.reuse);
   else {
     try { made = await makeProof(o.patient, o.hospital, o.claimId, o.code, o.amount, o.daysAgo ?? 2n); }
-    catch { row.result = "REJECTED"; row.detail = "Circuit refused to create a proof (a rule failed)"; }
+    catch {
+      const why = C.claimProblems({
+        hospital: o.hospital, hospitals: approved, policy: o.patient.policy, procedureCode: o.code,
+        claimDate: now - (o.daysAgo ?? 2n) * DAY, claimAmount: BigInt(o.amount * 100), claimSubmissionTime: now - 60n,
+      });
+      row.result = "REJECTED"; row.detail = `Circuit refused to create a proof: ${why.join(" ") || "a rule failed"}`;
+    }
   }
   if (made) {
     if (o.key) proofs.set(o.key, made);

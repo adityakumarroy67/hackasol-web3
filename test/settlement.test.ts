@@ -13,10 +13,9 @@ describe("InsureTrust settlement contract", () => {
   after(() => (globalThis as any).curve_bn128?.terminate()); // let mocha exit after proving
 
   async function setup({ pool = 100_000_000n } = {}) {
-    await C.init();
     const [insurer, patient, hospitalWallet, otherHospitalWallet, stranger] = await ethers.getSigners();
-    const hospital = C.makeHospital(new Uint8Array(32).fill(1), hospitalWallet.address);
-    const otherHospital = C.makeHospital(new Uint8Array(32).fill(2), otherHospitalWallet.address);
+    const hospital = await C.makeHospital(new Uint8Array(32).fill(1), hospitalWallet.address);
+    const otherHospital = await C.makeHospital(new Uint8Array(32).fill(2), otherHospitalWallet.address);
     const hospitals = [hospital, otherHospital];
     const hospitalRoot = C.merkleTree(hospitals.map((h) => h.leaf), C.HOSPITAL_DEPTH).root;
 
@@ -36,7 +35,7 @@ describe("InsureTrust settlement contract", () => {
 
     // The hospital makes a proof for a claim (defaults = a valid ₹42,000 claim).
     async function hospitalProof(over: Record<string, any> = {}) {
-      const input = C.buildClaim({
+      const input = await C.buildClaim({
         hospital, hospitals, policy, claimId: 880001n, procedureCode: 4402n,
         claimDate: now - 2n * DAY, claimAmount: 4_200_000n, claimSubmissionTime: now - 60n,
         chainId: 31337n, verifyingContract: contractAddress, ...over,

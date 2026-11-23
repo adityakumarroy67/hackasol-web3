@@ -11,13 +11,12 @@ const ZKEY = "circuits/build/claim.zkey";
 const vkey = JSON.parse(readFileSync("circuits/build/claim_vkey.json", "utf8"));
 const day = (y, m, d) => BigInt(Date.UTC(y, m - 1, d) / 1000); // UTC Unix seconds
 
-await C.init();
 after(() => globalThis.curve_bn128?.terminate()); // let the process exit after proving
 
 // ---------- fictional scenario ----------
-const hospitalA = C.makeHospital(new Uint8Array(32).fill(1), "0x" + "a1".repeat(20));
-const hospitalB = C.makeHospital(new Uint8Array(32).fill(2), "0x" + "b2".repeat(20));
-const outsider = C.makeHospital(new Uint8Array(32).fill(9), "0x" + "99".repeat(20)); // NOT approved
+const hospitalA = await C.makeHospital(new Uint8Array(32).fill(1), "0x" + "a1".repeat(20));
+const hospitalB = await C.makeHospital(new Uint8Array(32).fill(2), "0x" + "b2".repeat(20));
+const outsider = await C.makeHospital(new Uint8Array(32).fill(9), "0x" + "99".repeat(20)); // NOT approved
 const hospitals = [hospitalA, hospitalB];
 
 const policy = C.makePolicy({
@@ -40,16 +39,16 @@ const valid = {
   verifyingContract: "0x" + "c0".repeat(20),
 };
 const claim = (over = {}) => C.buildClaim({ ...valid, ...over });
-const prove = (input) => C.proveClaim(input, WASM, ZKEY);
-const rejects = (input) => assert.rejects(prove(input), "a proof was created for an invalid claim");
+const prove = async (input) => C.proveClaim(await input, WASM, ZKEY);
+const rejects = async (input) => assert.rejects(prove(await input), "a proof was created for an invalid claim");
 
 // ---------- valid claims ----------
 test("valid claim: proof is created and verifies", async () => {
-  const { proof, publicSignals } = await prove(claim());
+  const input = await claim();
+  const { proof, publicSignals } = await prove(input);
   assert.equal(await C.verifyClaim(vkey, publicSignals, proof), true);
 
   // the 8 public values are exactly what we expect, in order
-  const input = claim();
   assert.deepEqual(publicSignals.map(BigInt), C.PUBLIC_SIGNALS.map((k) => input[k]));
 
   // private details never appear in the public values
@@ -82,22 +81,21 @@ test("rejected: oversized amounts (number wrap-around tricks)", async () => {
   await rejects(claim({ claimAmount: 1n << 128n }));
   await rejects(claim({ claimAmount: FIELD - 1n })); // acts like "-1" in circuit math
 });
-test("rejected: policy terms don't match the registered fingerprint", () => {
-  const input = claim();
-  return rejects({ ...input, policyLimit: 99_000_000n }); // secretly raise the limit
+test("rejected: policy terms don't match the registered fingerprint", async () => {
+  return rejects({ ...(await claim()), policyLimit: 99_000_000n }); // secretly raise the limit
 });
 
 // ---------- hospital rules ----------
 test("rejected: hospital not on the approved list", () => rejects(claim({ hospital: outsider })));
-test("rejected: payout address swapped to someone else's wallet", () =>
-  rejects({ ...claim(), hospitalPayoutAddress: BigInt("0x" + "ee".repeat(20)) }));
+test("rejected: payout address swapped to someone else's wallet", async () =>
+  rejects({ ...(await claim()), hospitalPayoutAddress: BigInt("0x" + "ee".repeat(20)) }));
 test("rejected: claim signed by a different hospital", () => rejects(claim({ signer: hospitalA })));
-test("rejected: amount changed after the hospital signed", () => {
-  const input = claim(); // hospital signed ₹42,000
+test("rejected: amount changed after the hospital signed", async () => {
+  const input = await claim(); // hospital signed ₹42,000
   return rejects({ ...input, claimAmount: 4_900_000n }); // someone tries to claim ₹49,000
 });
 test("rejected: tampered hospital-list proof (changed neighbour / invalid direction bit)", async () => {
-  const input = claim();
+  const input = await claim();
   const path = [...input.hospitalPath]; path[0] += 1n;
   await rejects({ ...input, hospitalPath: path });
   const bits = [...input.hospitalPathIndices]; bits[0] = 2;
@@ -105,8 +103,22 @@ test("rejected: tampered hospital-list proof (changed neighbour / invalid direct
 });
 
 // ---------- one-time claim code ----------
-test("rejected: forged one-time claim code (nullifier)", () => rejects({ ...claim(), claimNullifier: 123n }));
-test("same claim ID always gives the same one-time code (so the contract can block repeats)", () => {
-  assert.equal(claim().claimNullifier, claim().claimNullifier);
-  assert.notEqual(claim().claimNullifier, claim({ claimId: 880002n }).claimNullifier);
+test("rejected: forged one-time claim code (nullifier)", async () => rejects({ ...(await claim()), claimNullifier: 123n }));
+test("same claim ID always gives the same one-time code (so the contract can block repeats)", async () => {
+  assert.equal((await claim()).claimNullifier, (await claim()).claimNullifier);
+  assert.notEqual((await claim()).claimNullifier, (await claim({ claimId: 880002n })).claimNullifier);
+});
+
+// ---------- plain-language reasons (shown on the website before proving) ----------
+test("claimProblems explains each broken rule in plain words", () => {
+  const base = { hospital: hospitalB, hospitals, policy, procedureCode: 4402n, claimDate: day(2026, 11, 20), claimAmount: 4_200_000n, claimSubmissionTime: day(2026, 11, 23) };
+  assert.deepEqual(C.claimProblems(base), []);
+  assert.match(C.claimProblems({ ...base, hospital: outsider })[0], /not on the insurer's approved list/);
+  assert.match(C.claimProblems({ ...base, claimDate: policy.policyExpiry, claimSubmissionTime: policy.policyExpiry })[0], /expired/);
+  assert.match(C.claimProblems({ ...base, procedureCode: 9999n })[0], /not covered/);
+  assert.match(C.claimProblems({ ...base, claimAmount: policy.policyLimit + 1n })[0], /above the policy limit/);
+});
+
+test("big-number JSON round-trip keeps policy files exact", () => {
+  assert.deepEqual(C.fromJson(C.toJson(policy)), policy);
 });

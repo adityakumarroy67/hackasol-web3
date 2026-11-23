@@ -1,9 +1,23 @@
 # Run the project the same way on every laptop: no WSL setup, no Windows Hardhat block.
 #
-#   docker compose up -d ipfs                    # start the local IPFS node (keeps running)
-#   docker compose run --rm dev npm ci           # first time only: install packages
-#   docker compose run --rm dev npm test         # then any project command, e.g. npm run demo
+#   docker compose run --rm dev npm ci                    # first time only: install packages
+#   docker compose up -d                                  # IPFS + local blockchain + website
+#   docker compose run --rm dev npm run deploy:local      # put the contracts on the local blockchain
+#   open http://localhost:5173
 #
+#   docker compose run --rm dev npm test                  # any project command, e.g. npm run demo
+#
+x-node: &node # shared settings for every service that runs project code
+  build: .
+  working_dir: /app
+  volumes:
+    - .:/app
+    - node-modules:/app/node_modules # Linux packages, kept apart from the Windows folder
+    - tool-cache:/root/.cache # Solidity compiler downloads, kept between runs
+  env_file:
+    - path: .env # optional secrets for Sepolia / Cloudflare (see .env.example); never committed
+      required: false
+
 services:
   ipfs:
     # Local IPFS node (Kubo). Runs OFFLINE: files stay on this laptop and no peer-to-peer
@@ -17,16 +31,33 @@ services:
       - ipfs-data:/data/ipfs
     restart: unless-stopped
 
-  dev:
-    # Node 24 + circom on Linux: runs Hardhat, tests, circuit builds and the demo.
-    build: .
-    working_dir: /app
-    volumes:
-      - .:/app
-      - node-modules:/app/node_modules # Linux packages, kept apart from the Windows folder
-      - tool-cache:/root/.cache # Solidity compiler downloads, kept between runs
+  chain:
+    # Local test blockchain (chain ID 31337, fake money). Resets when restarted: deploy again after.
+    <<: *node
+    command: npx hardhat node
+    ports:
+      - "127.0.0.1:8545:8545"
+    restart: unless-stopped
+
+  web:
+    # The website (Vite dev server) at http://localhost:5173
+    <<: *node
+    command: npx vite --host 0.0.0.0
+    ports:
+      - "127.0.0.1:5173:5173"
     environment:
       IPFS_API: http://ipfs:5001
+      IPFS_GATEWAY: http://ipfs:8080
+      LOCAL_RPC: http://chain:8545
+    depends_on: [ipfs, chain]
+
+  dev:
+    # Toolbox: tests, circuit builds, deploys, the demo. Runs only on demand (docker compose run --rm dev …).
+    <<: *node
+    profiles: ["tools"]
+    environment:
+      IPFS_API: http://ipfs:5001
+      LOCAL_RPC: http://chain:8545
     depends_on: [ipfs]
 
 volumes:

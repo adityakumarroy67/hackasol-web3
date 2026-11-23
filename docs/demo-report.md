@@ -1,6 +1,6 @@
 # InsureTrust demo report
 
-Generated 2026-11-22T23:31:20.984Z by `scripts/demo.ts` on a local Hardhat test chain (chain ID 31337).
+Generated 2026-11-22T23:47:26.399Z by `scripts/demo.ts` on a local Hardhat test chain (chain ID 31337).
 **All patients, hospitals, policies and money are fictional. tINR is a test token with no real value.**
 
 ## Result: ✅ everything behaved as expected
@@ -11,20 +11,20 @@ Generated 2026-11-22T23:31:20.984Z by `scripts/demo.ts` on a local Hardhat test 
 
 | # | Patient | Hospital | Scenario | Expected | Result | Details |
 |---|---|---|---|---|---|---|
-| 1 | Aarav (fictional) | Sanjeevani Multispeciality (fictional) | Appendectomy, ₹85,000 (Gold, limit ₹2,00,000) | PAID | ✅ PAID | Proof verified on-chain; ₹85,000 tINR sent to hospital (proof made in 1.7 s) |
+| 1 | Aarav (fictional) | Sanjeevani Multispeciality (fictional) | Appendectomy, ₹85,000 (Gold, limit ₹2,00,000) | PAID | ✅ PAID | Proof verified on-chain; ₹85,000 tINR sent to hospital (proof made in 1.9 s) |
 | 2 | Aarav (fictional) | Sanjeevani Multispeciality (fictional) | Same claim submitted again | REJECTED | ✅ REJECTED | Contract refused: AlreadyPaid |
-| 3 | Meera (fictional) | Narmada Heart Institute (fictional) | Cataract surgery, ₹60,000 (Silver, limit ₹50,000) | REJECTED | ✅ REJECTED | Circuit refused to create a proof (a rule failed) |
-| 4 | Kabir (fictional) | Sanjeevani Multispeciality (fictional) | Cataract surgery on an expired policy | REJECTED | ✅ REJECTED | Circuit refused to create a proof (a rule failed) |
-| 5 | Ishita (fictional) | Narmada Heart Institute (fictional) | Cosmetic surgery (not covered) | REJECTED | ✅ REJECTED | Circuit refused to create a proof (a rule failed) |
-| 6 | Meera (fictional) | Unlisted Clinic (NOT approved) | Claim from a hospital NOT on the approved list | REJECTED | ✅ REJECTED | Circuit refused to create a proof (a rule failed) |
+| 3 | Meera (fictional) | Narmada Heart Institute (fictional) | Cataract surgery, ₹60,000 (Silver, limit ₹50,000) | REJECTED | ✅ REJECTED | Circuit refused to create a proof: The amount is above the policy limit. |
+| 4 | Kabir (fictional) | Sanjeevani Multispeciality (fictional) | Cataract surgery on an expired policy | REJECTED | ✅ REJECTED | Circuit refused to create a proof: The policy had expired on the treatment date. |
+| 5 | Ishita (fictional) | Narmada Heart Institute (fictional) | Cosmetic surgery (not covered) | REJECTED | ✅ REJECTED | Circuit refused to create a proof: This procedure is not covered by the policy. |
+| 6 | Meera (fictional) | Unlisted Clinic (NOT approved) | Claim from a hospital NOT on the approved list | REJECTED | ✅ REJECTED | Circuit refused to create a proof: This hospital is not on the insurer's approved list. |
 | 7 | Ishita (fictional) | Narmada Heart Institute (fictional) | Stranger (not the patient) submits Ishita's proof | REJECTED | ✅ REJECTED | Contract refused: NotPolicyHolder |
-| 8 | Ishita (fictional) | Narmada Heart Institute (fictional) | Knee replacement, ₹2,40,000 — Ishita submits | PAID | ✅ PAID | Proof verified on-chain; ₹2,40,000 tINR sent to hospital (proof made in 1.2 s) |
+| 8 | Ishita (fictional) | Narmada Heart Institute (fictional) | Knee replacement, ₹2,40,000 — Ishita submits | PAID | ✅ PAID | Proof verified on-chain; ₹2,40,000 tINR sent to hospital (proof made in 1.4 s) |
 
 ## What the insurer sees on the blockchain
 | Claim | Policy fingerprint | Paid to (hospital wallet) | Amount |
 |---|---|---|---|
-| 0 | `0x7f74c6…0880` | `0x996550…A4dc` | ₹85,000 |
-| 1 | `0x1b8a56…0d5e` | `0x976EA7…0aa9` | ₹2,40,000 |
+| 0 | `0x248914…cb8b` | `0x996550…A4dc` | ₹85,000 |
+| 1 | `0x11b88d…efee` | `0x976EA7…0aa9` | ₹2,40,000 |
 
 Pool: started at ₹10,00,000, now ₹6,75,000.
 
@@ -39,7 +39,7 @@ Storage used: local IPFS node (Kubo in Docker, http://ipfs:5001); offline mode, 
 | # | Step | Expected | Result | Details |
 |---|---|---|---|---|
 | R1 | Aarav, Dr. Rao and a stranger unlock their health lockers (create keys from a wallet signature) | ALLOWED | ✅ ALLOWED | 3 public keys published on-chain (32 bytes each); private keys never leave each person's device |
-| R2 | Sanjeevani writes Aarav's record, locks it, stores the locked file and adds it to Aarav's locker | ALLOWED | ✅ ALLOWED | Locked file 773 bytes, content ID `bafkreihzmycoq…`; on-chain: content ID + a 92-byte locked key for Aarav |
+| R2 | Sanjeevani writes Aarav's record, locks it, stores the locked file and adds it to Aarav's locker | ALLOWED | ✅ ALLOWED | Locked file 773 bytes, content ID `bafkreihw3bhe2…`; on-chain: content ID + a 92-byte locked key for Aarav |
 | R3 | Aarav opens his own record | ALLOWED | ✅ ALLOWED | Decrypted on their device (condition: "Acute appendicitis"); view written to the on-chain access history |
 | R4 | Dr. Rao tries to open it before Aarav gives access | BLOCKED | ✅ BLOCKED | Contract refused: NoAccess |
 | R5 | Aarav gives Dr. Rao access for 7 days | ALLOWED | ✅ ALLOWED | Record key re-locked for Dr. Rao's public key; expires 2026-11-29 |
@@ -60,7 +60,7 @@ Storage used: local IPFS node (Kubo in Docker, http://ipfs:5001); offline mode, 
 ### What is stored where
 | Where | What is there | Can others read the medical details? |
 |---|---|---|
-| IPFS, content ID `bafkreihzmycoqvw44qm7r4npfqva733r3yb2dpccryx4ygryya5jmanc2u` (open http://127.0.0.1:8080/ipfs/bafkreihzmycoqvw44qm7r4npfqva733r3yb2dpccryx4ygryya5jmanc2u to see the locked file) | The locked record, 773 bytes. First bytes: `0x9053da75009817e52d857744c66a660d…` | No: it's unreadable without the record key |
+| IPFS, content ID `bafkreihw3bhe2lipjqnfwpdiwprxfnkn36wdtyccrbisxkujhxzvgd6uyi` (open http://127.0.0.1:8080/ipfs/bafkreihw3bhe2lipjqnfwpdiwprxfnkn36wdtyccrbisxkujhxzvgd6uyi to see the locked file) | The locked record, 773 bytes. First bytes: `0x7d826f418a03981d1a48d2bac6b028cb…` | No: it's unreadable without the record key |
 | Blockchain (HealthRecords) | Content ID, patient and issuer addresses, 92-byte locked keys, access events | No: no medical data, and each locked key opens only with its owner's private key |
 | Each person's own device (memory only) | Their private key and, once they open it, the readable record | Only that person |
 
