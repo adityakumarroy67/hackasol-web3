@@ -133,10 +133,30 @@ async function step(name, fn) {
 }
 const INSURER = 0, AARAV = 1, SANJEEVANI = 5, NARMADA = 6, DR_RAO = 8;
 const PEOPLE = { [INSURER]: ["Insurer", "InsureTrust Insurance"], [AARAV]: ["Patient", "Aarav"], [SANJEEVANI]: ["Hospital", "Sanjeevani"], [NARMADA]: ["Hospital", "Narmada"], [DR_RAO]: ["Doctor", "Dr. Rao"] };
+// A stand-in for the MetaMask extension: window.ethereum backed by the local chain (whose test
+// accounts can sign). window.__wallet is the "selected account"; the test changes it like a person would.
+const STAND_IN_WALLET = `window.__wallet = null;
+window.ethereum = {
+  isMetaMask: true, on() {}, removeListener() {},
+  async request({ method, params = [] }) {
+    if (method === "eth_accounts" || method === "eth_requestAccounts") return window.__wallet ? [window.__wallet] : [];
+    if (method.startsWith("wallet_")) return null;
+    const res = await fetch("/rpc", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
+    const out = await res.json();
+    if (out.error) throw Object.assign(new Error(out.error.message), { code: out.error.code, data: out.error.data });
+    return out.result;
+  },
+};`;
+// Hardhat's public test accounts (fake money): 0 = insurer, 1 = Aarav, 9 = never used by the demo.
+const WALLET = { insurer: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", aarav: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", fresh: "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720" };
+const useWallet = (address) => js(`window.__wallet = ${q(address)}`);
+const press = (text) => js(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim().startsWith(${q(text)})).click()`);
+
 let exitCode = 0;
 try {
   await cdp("Page.enable");
   await cdp("Runtime.enable");
+  await cdp("Page.addScriptToEvaluateOnNewDocument", { source: STAND_IN_WALLET });
   await cdp("Page.navigate", { url: APP_URL });
   await sleep(2500);
   await js(HELPERS);
@@ -270,6 +290,37 @@ try {
     await t.waitFor("Paid claims", "verified on-chain");
     await t.waitFor("Paid claims", "₹42,000");
     await screenshot("insurer-dashboard");
+  });
+
+  // ---------- MetaMask: switching accounts never turns you into someone else silently ----------
+  await step("MetaMask: the insurer signs in with their wallet", async () => {
+    await press("Sign out");
+    await useWallet(WALLET.insurer);
+    await t.waitFor(null, "Sign in as");
+    await js(`[...document.querySelectorAll(".role-card")].find((b) => b.textContent.includes("Insurer")).click()`);
+    await press("Connect MetaMask");
+    await t.waitFor("Recent claims", "₹42,000");
+  });
+  await step("MetaMask: switching to the patient's account signs out, then 'Continue as Aarav' signs in as him", async () => {
+    await useWallet(WALLET.aarav);
+    await t.waitFor(null, "MetaMask switched to another account");
+    await screenshot("signed-out-switch");
+    await press("Continue as Aarav");
+    await t.waitFor(null, "Aarav · Patient");
+    await t.waitFor(null, "My details");
+  });
+  await step("MetaMask: the insurer's wallet can't sign in as a patient", async () => {
+    await useWallet(WALLET.insurer);
+    await t.waitFor(null, "MetaMask switched to another account");
+    await js(`[...document.querySelectorAll(".role-card")].find((b) => b.textContent.includes("Patient")).click()`);
+    await press("Connect MetaMask");
+    await t.waitFor(null, "This MetaMask account is the insurer's");
+  });
+  await step("MetaMask: a brand-new account signs in from the login page (no old role picker)", async () => {
+    await useWallet(WALLET.fresh);
+    await press("Connect MetaMask"); // still on "Sign in as patient"
+    await t.waitFor("Create your health locker", "Create my health locker");
+    if ((await t.text(null)).includes("How will you use InsureTrust")) throw new Error("the old role picker appeared");
   });
 } catch {
   exitCode = 1;

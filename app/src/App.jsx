@@ -33,6 +33,7 @@ export default function App() {
   const [mode, setMode] = useState(null); // "test" | "metamask" | "guest"
   const [storage, setStorage] = useState(null);
   const [error, setError] = useState(null);
+  const [notice, setNotice] = useState(null); // why the person was signed out ({ message, account, role, name })
   const [busy, setBusy] = useState(false);
   const [refreshKey, refresh] = useReducer((x) => x + 1, 0);
   const [toasts, setToasts] = useState([]);
@@ -51,6 +52,7 @@ export default function App() {
   async function start(nextMode, connect, wantRole) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const s = await connect();
       openInbox(s);
@@ -73,15 +75,28 @@ export default function App() {
   const startTest = (index) => start("test", () => connectTestAccount(index));
   const startMetaMask = (wantRole) => start("metamask", connectMetaMask, wantRole);
 
-  // Follow MetaMask account / network switches. Newer MetaMask versions don't always send the
-  // "accountsChanged" event, so the site also checks the active account every 1.5 seconds.
+  // Sign out and go back to the login page, saying why. If the wallet's new account already has a
+  // role here, the login page offers "Continue as …" (one click, still an explicit choice).
+  function endSession(message, account) {
+    const a = account?.toLowerCase();
+    const known = a && (a === session?.deployment.insurer.toLowerCase() ? "insurer" : inboxNow().people[a]?.role);
+    setSession(null);
+    setMode(null);
+    setError(null);
+    setNotice({ message, account, role: known, name: a && nameOf(a) });
+  }
+
+  // Follow MetaMask account / network switches: never become another person silently.
+  // Newer MetaMask versions don't always send "accountsChanged", so the site also checks every 1.5 seconds.
   useEffect(() => {
     if (mode !== "metamask" || !window.ethereum || !session) return; // signed out: wait for a click
     const check = async () => {
       try {
         const [account] = await window.ethereum.request({ method: "eth_accounts" });
         const chainId = parseInt(await window.ethereum.request({ method: "eth_chainId" }), 16);
-        if ((account && account.toLowerCase() !== session?.address?.toLowerCase()) || chainId !== session?.chainId) startMetaMask();
+        if (!account) endSession("MetaMask disconnected this site, so you were signed out.");
+        else if (account.toLowerCase() !== session.address.toLowerCase()) endSession(`MetaMask switched to another account (${short(account)}), so you were signed out.`, account);
+        else if (chainId !== session.chainId) endSession("MetaMask switched to another network, so you were signed out. Sign in again.");
       } catch {}
     };
     const timer = setInterval(check, 1500);
@@ -94,17 +109,21 @@ export default function App() {
     };
   }, [mode, session?.address, session?.chainId]);
 
-  // Opens MetaMask's account picker (lets this site use another of your accounts).
+  // Opens MetaMask's account picker. Picking another account signs out (see the check above).
   async function switchAccount() {
     try {
       await window.ethereum.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
-      startMetaMask();
-    } catch (e) { setError(explainError(e)); }
+    } catch (e) { notify({ message: explainError(e) }); }
   }
-  const signOut = () => { setSession(null); setMode(null); setError(null); };
+  const signOut = () => { setSession(null); setMode(null); setError(null); setNotice(null); };
+
+  const role = session && roleOf(session, inbox);
+  // An account without a role (shouldn't happen after the login page) goes back to choose one.
+  useEffect(() => {
+    if (session?.signer && !role) endSession("Choose how to sign in with this account.", session.address);
+  }, [session, role]);
 
   if (!storage) return null;
-  const role = session && roleOf(session, inbox);
   return (
     <AppContext.Provider value={{ session, storage, refresh, refreshKey, notify }}>
       <Toasts toasts={toasts} dismiss={dismiss} />
@@ -124,7 +143,7 @@ export default function App() {
       </header>
 
       {!session ? (
-        <Welcome busy={busy} error={error} onTest={startTest} onMetaMask={startMetaMask} onGuest={() => start("guest", connectGuest)}
+        <Welcome busy={busy} error={error} notice={notice} onTest={startTest} onMetaMask={startMetaMask} onGuest={() => start("guest", connectGuest)}
           onSwitch={async (chainId, wantRole) => {
             try {
               if (!window.ethereum) throw new Error("MetaMask isn't installed. Get it free at metamask.io, then reload this page.");
@@ -157,30 +176,13 @@ function claimRole(session, wantRole) {
   if (!current) updateInbox((d) => { d.people[me] = { ...(d.people[me] ?? {}), role: wantRole }; });
 }
 
-// The signed-in person's Home, or the page it opened. Asks for a role only if the account has none
-// (e.g. it reconnected after a MetaMask account switch).
+// The signed-in person's Home, or the page it opened. (An account without a role is sent back to
+// the login page by App, so nothing shows here meanwhile.)
 function RoleScreen() {
   const { session } = useApp();
   const inbox = useInbox();
   const role = roleOf(session, inbox);
-  if (!role) {
-    const me = session.address.toLowerCase();
-    return (
-      <section className="role-picker">
-        <h2>How will you use InsureTrust?</h2>
-        <p className="muted">Choose once for this account</p>
-        <div className="role-cards">
-          {["patient", "hospital", "doctor"].map((r) => { const Icon = ROLES[r].icon; return (
-            <button key={r} className="role-card" onClick={() => updateInbox((d) => { d.people[me] = { ...(d.people[me] ?? {}), role: r }; })}>
-              <span className="role-icon"><Icon /></span>
-              <b>I'm a {ROLES[r].label.toLowerCase()}</b>
-              <span className="muted">{ROLES[r].text}</span>
-            </button>
-          ); })}
-        </div>
-      </section>
-    );
-  }
+  if (!role) return null;
   const [Home, Page] = {
     patient: [PatientHome, Patient], hospital: [HospitalHome, Hospital], doctor: [DoctorHome, Doctor],
     insurer: [InsurerHome, Insurer], guest: [InsurerHome, Insurer],
@@ -214,7 +216,7 @@ function PageTitle({ role, page }) {
   );
 }
 
-function Welcome({ busy, error, onTest, onMetaMask, onGuest, onSwitch }) {
+function Welcome({ busy, error, notice, onTest, onMetaMask, onGuest, onSwitch }) {
   return (
     <main id="main" className="welcome">
       <section className="hero">
@@ -229,7 +231,7 @@ function Welcome({ busy, error, onTest, onMetaMask, onGuest, onSwitch }) {
           <li><b>Patient</b> approves. The contract verifies the proof, blocks double payment, and pays the hospital.</li>
         </ol>
       </section>
-      <Login busy={busy} error={error} onTest={onTest} onMetaMask={onMetaMask} onGuest={onGuest} onSwitch={onSwitch} />
+      <Login busy={busy} error={error} notice={notice} onTest={onTest} onMetaMask={onMetaMask} onGuest={onGuest} onSwitch={onSwitch} />
       <Receipt example no="Claim no. 0003" paidOn="21 Nov 2026, 4:12 pm" policy={<code>0x1f3a…9c2e</code>}
         paidTo="Sanjeevani Multispeciality" amount="₹42,000" />
     </main>
@@ -237,12 +239,22 @@ function Welcome({ busy, error, onTest, onMetaMask, onGuest, onSwitch }) {
 }
 
 // Step 1: choose a role. Step 2: choose who (a demo person, or your MetaMask account).
-function Login({ busy, error, onTest, onMetaMask, onGuest, onSwitch }) {
+function Login({ busy, error, notice, onTest, onMetaMask, onGuest, onSwitch }) {
   const [role, setRole] = useState(null);
   const status = <>{busy && <p className="muted"><span className="spinner" /> Signing in…</p>}{error && <ErrorNote>{error}</ErrorNote>}</>;
   if (!role) {
     return (
       <section className="card connect">
+        {notice && (
+          <div className="signed-out" role="status">
+            <p>{notice.message}</p>
+            {notice.role ? (
+              <button className="btn primary" disabled={busy} onClick={() => onMetaMask(notice.role)}>
+                Continue as {notice.name ?? short(notice.account)} ({ROLES[notice.role].label})
+              </button>
+            ) : notice.account && <p className="muted">This account is new here. Choose how to sign in with it.</p>}
+          </div>
+        )}
         <h3>Sign in as</h3>
         <div className="role-grid">
           {["patient", "hospital", "doctor", "insurer"].map((r) => { const Icon = ROLES[r].icon; return (
