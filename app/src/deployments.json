@@ -9,5 +9,16 @@
     "fromBlock": 1,
     "deploymentId": "0x122e91cc6b5431b26a3f2091945fdb1b930d33fd1e03660a5f8413f9d76ede81",
     "deployedAt": "2026-11-23T00:42:51.698Z"
+  },
+  "11155111": {
+    "network": "sepolia",
+    "insureTrust": "0x09fb7E8D2Fff56e63523Cd538B78DD2517079BFa",
+    "healthRecords": "0x18e8c638379a8095c5a199d650a33315f6251659",
+    "token": "0xcb709f49266231574616FF354ADfD7DFecc9d23a",
+    "verifier": "0xe897Ab4167eC3DefB4586cF7Dc8Dd37DBfb18DBa",
+    "insurer": "0x8a5f90B074566e8cddBEe472C13F103c24C6b1D7",
+    "fromBlock": 12192586,
+    "deploymentId": "0xa3477ba0ea00ad0adb47e11ab52513f4cf833e7f7287a14f4e7d22d422226725",
+    "deployedAt": "2026-11-23T01:48:37.876Z"
   }
 }

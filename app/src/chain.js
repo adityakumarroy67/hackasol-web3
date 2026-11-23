@@ -7,7 +7,8 @@ export const LOCAL = 31337;
 export const SEPOLIA = 11155111;
 export const NETWORKS = {
   [LOCAL]: { name: "Local test chain", explorer: null },
-  [SEPOLIA]: { name: "Sepolia testnet", explorer: "https://sepolia.etherscan.io", rpc: "https://ethereum-sepolia-rpc.publicnode.com" },
+  // Blockscout: our contract source code is verified there (and on Sourcify).
+  [SEPOLIA]: { name: "Sepolia testnet", explorer: "https://eth-sepolia.blockscout.com", rpc: "https://ethereum-sepolia-rpc.publicnode.com" },
 };
 
 // The dev server (Docker) forwards /rpc to the local chain. The hosted website has no local chain.
@@ -63,7 +64,20 @@ export async function switchMetaMaskTo(chainId) {
   }
 }
 
+// MetaMask often picks a fee far above what the network needs (e.g. 1.5 gwei when 0.05 is plenty).
+// The site suggests a low but reliable fee instead; MetaMask shows it as "site suggested".
+const TIP = 50_000_000n; // 0.05 gwei priority fee: confirmed within ~1 block on Sepolia
+function withLowFees(signer, provider) {
+  const send = signer.sendTransaction.bind(signer);
+  signer.sendTransaction = async (tx) => {
+    const base = (await provider.getBlock("latest"))?.baseFeePerGas;
+    return send(base == null ? tx : { ...tx, maxPriorityFeePerGas: TIP, maxFeePerGas: base * 2n + TIP });
+  };
+  return signer;
+}
+
 async function makeSession(provider, signer, chainId) {
+  if (signer && chainId === SEPOLIA) withLowFees(signer, provider);
   const deployment = deployments[chainId];
   if (!deployment) {
     const where = Object.keys(deployments).map((id) => NETWORKS[id]?.name ?? `chain ${id}`).join(" or ");

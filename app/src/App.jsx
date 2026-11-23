@@ -55,16 +55,34 @@ export default function App() {
   const startTest = (index) => { setTestIndex(index); start("test", () => connectTestAccount(index), TAB_FOR_ROLE[TEST_ACCOUNTS[index].role]); };
   const startMetaMask = () => start("metamask", connectMetaMask);
 
-  // Follow MetaMask account / network switches.
+  // Follow MetaMask account / network switches. Newer MetaMask versions don't always send the
+  // "accountsChanged" event, so the site also checks the active account every 1.5 seconds.
   useEffect(() => {
-    if (mode !== "metamask" || !window.ethereum?.on) return;
-    window.ethereum.on("accountsChanged", startMetaMask);
-    window.ethereum.on("chainChanged", startMetaMask);
-    return () => {
-      window.ethereum.removeListener("accountsChanged", startMetaMask);
-      window.ethereum.removeListener("chainChanged", startMetaMask);
+    if (mode !== "metamask" || !window.ethereum) return;
+    const check = async () => {
+      try {
+        const [account] = await window.ethereum.request({ method: "eth_accounts" });
+        const chainId = parseInt(await window.ethereum.request({ method: "eth_chainId" }), 16);
+        if ((account && account.toLowerCase() !== session?.address?.toLowerCase()) || chainId !== session?.chainId) startMetaMask();
+      } catch {}
     };
-  }, [mode]);
+    const timer = setInterval(check, 1500);
+    window.ethereum.on?.("accountsChanged", check);
+    window.ethereum.on?.("chainChanged", check);
+    return () => {
+      clearInterval(timer);
+      window.ethereum.removeListener?.("accountsChanged", check);
+      window.ethereum.removeListener?.("chainChanged", check);
+    };
+  }, [mode, session?.address, session?.chainId]);
+
+  // Opens MetaMask's account picker (lets this site use another of your accounts).
+  async function switchAccount() {
+    try {
+      await window.ethereum.request({ method: "wallet_requestPermissions", params: [{ eth_accounts: {} }] });
+      startMetaMask();
+    } catch (e) { setError(explainError(e)); }
+  }
 
   if (!storage) return null;
   return (
@@ -80,7 +98,10 @@ export default function App() {
                 {TEST_ACCOUNTS.map((a) => <option key={a.index} value={a.index}>{a.name} · {a.role}</option>)}
               </select>
             ) : session.address ? (
-              <span className="who"><b>{nameOf(session.address) ?? "My wallet"}</b> <code>{short(session.address)}</code></span>
+              <>
+                <span className="who"><b>{nameOf(session.address) ?? "My wallet"}</b> <code>{short(session.address)}</code></span>
+                {mode === "metamask" && <button className="btn primary small" onClick={switchAccount}>Switch account</button>}
+              </>
             ) : <Pill>Guest (read-only)</Pill>}
             <button className="btn ghost small" onClick={() => { setSession(null); setMode(null); }}>Change</button>
           </div>
