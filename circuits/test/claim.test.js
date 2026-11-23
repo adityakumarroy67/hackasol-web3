@@ -1,14 +1,14 @@
 // Circuit tests: one valid claim, then one test per way of cheating.
-// Run: npm run test:circuit   (needs `npm run circuit claim` first)
+// Run: npm run test:circuit   (uses the committed proof files in app/public/zk, the ones deployed)
 // All data is fictional.
 import { test, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import * as C from "../../lib/claim.js";
 
-const WASM = "circuits/build/claim_js/claim.wasm";
-const ZKEY = "circuits/build/claim.zkey";
-const vkey = JSON.parse(readFileSync("circuits/build/claim_vkey.json", "utf8"));
+const WASM = "app/public/zk/claim.wasm";
+const ZKEY = "app/public/zk/claim.zkey";
+const vkey = JSON.parse(readFileSync("app/public/zk/claim_vkey.json", "utf8"));
 const day = (y, m, d) => BigInt(Date.UTC(y, m - 1, d) / 1000); // UTC Unix seconds
 
 after(() => globalThis.curve_bn128?.terminate()); // let the process exit after proving
@@ -107,6 +107,15 @@ test("rejected: forged one-time claim code (nullifier)", async () => rejects({ .
 test("same claim ID always gives the same one-time code (so the contract can block repeats)", async () => {
   assert.equal((await claim()).claimNullifier, (await claim()).claimNullifier);
   assert.notEqual((await claim()).claimNullifier, (await claim({ claimId: 880002n })).claimNullifier);
+});
+
+test("same bill always gets the same claim ID, so a retried proof can't be paid twice", async () => {
+  const id = await C.stableClaimId("0xhospital", "bill:INV-0001");
+  assert.equal(id, await C.stableClaimId("0xhospital", "bill:INV-0001"));
+  assert.notEqual(id, await C.stableClaimId("0xhospital", "bill:INV-0002"));
+  assert.notEqual(id, await C.stableClaimId("0xother", "bill:INV-0001"));
+  assert.ok(id < 2n ** 120n); // the circuit accepts claim IDs up to 128 bits
+  assert.equal((await claim({ claimId: id })).claimNullifier, (await claim({ claimId: id })).claimNullifier);
 });
 
 // ---------- plain-language reasons (shown on the website before proving) ----------

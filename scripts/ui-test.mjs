@@ -151,7 +151,7 @@ try {
     await t.check("Approved hospitals", "Sanjeevani");
     await t.check("Approved hospitals", "Narmada");
     await t.click("Approved hospitals", "Save approved list on-chain");
-    await t.waitFor("Approved hospitals", "Saved on-chain");
+    await t.waitFor("Approved hospitals", "saved on-chain");
   });
   let aaravAddress;
   await step("insurer issues a Gold policy to Aarav", async () => {
@@ -168,7 +168,7 @@ try {
   });
   await step("Sanjeevani writes an encrypted record for Aarav (stored on IPFS)", async () => {
     await t.account(SANJEEVANI);
-    await t.waitFor("Your hospital", "Approved by insurer");
+    await t.waitFor("Your hospital", "approved by insurer");
     await t.click("Write a medical record", "Encrypt & add");
     await t.waitFor("Write a medical record", "Record locked and added");
   });
@@ -191,11 +191,19 @@ try {
   await step("Aarav approves: contract verifies the proof and pays ₹42,000", async () => {
     await t.account(AARAV);
     await t.click("Claims waiting for your approval", "Approve & submit claim");
-    await t.waitFor("My claim history", "Paid ✓", 60_000);
+    await t.waitFor("My claim history", "Paid", 60_000);
   });
   await step("paying the same claim twice is refused", async () => {
     await t.click("My claim history", "Verify it can't be paid twice");
     await t.waitFor("My claim history", "already paid");
+  });
+  await step("the hospital can't bill the same case twice (same bill, same one-time code)", async () => {
+    await t.account(SANJEEVANI);
+    await js(`(() => { const s = __t.field("Prepare an insurance claim", "Treatment case"); __t.set(s, s.options[1].value); })()`);
+    await t.waitFor("Prepare an insurance claim", "All policy rules pass");
+    await t.click("Prepare an insurance claim", "Create proof");
+    await t.waitFor("Prepare an insurance claim", "already been paid");
+    await t.account(AARAV);
   });
   await step("Aarav opens his record and shares it with Dr. Rao for 7 days", async () => {
     await t.click("My medical records", "Open");

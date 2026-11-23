@@ -12,15 +12,25 @@ const listeners = new Set();
 let storageKey = null;
 let inbox = EMPTY;
 
+const load = () => {
+  try { return { ...structuredClone(EMPTY), ...fromJson(localStorage.getItem(storageKey) ?? "{}") }; }
+  catch { return structuredClone(EMPTY); }
+};
+
 export function openInbox(session) {
   storageKey = `insuretrust:${session.chainId}:${session.deployment.deploymentId}`;
-  try { inbox = { ...EMPTY, ...fromJson(localStorage.getItem(storageKey) ?? "{}") }; } catch { inbox = EMPTY; }
+  inbox = load();
   listeners.forEach((l) => l());
 }
 
-// change(draft) edits a copy; the result is saved and every screen updates.
+// Another tab of this site saved: show its changes here too.
+addEventListener("storage", (e) => {
+  if (storageKey && e.key === storageKey) { inbox = load(); listeners.forEach((l) => l()); }
+});
+
+// change(draft) edits a fresh copy of what's saved (another tab may have saved since), then saves.
 export function updateInbox(change) {
-  const draft = structuredClone(inbox);
+  const draft = load();
   change(draft);
   inbox = draft;
   localStorage.setItem(storageKey, toJson(inbox));
@@ -70,7 +80,9 @@ export async function openStorage() {
     viewUrl: null,
     async put(bytes) {
       const cid = await R.cidOf(bytes);
-      localStorage.setItem(`insuretrust-file:${cid}`, btoa(String.fromCharCode(...bytes)));
+      let text = ""; // in slices: spreading a 256 KB file into one call overflows the stack
+      for (let i = 0; i < bytes.length; i += 0x8000) text += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+      localStorage.setItem(`insuretrust-file:${cid}`, btoa(text));
       return cid;
     },
     async get(cid) {

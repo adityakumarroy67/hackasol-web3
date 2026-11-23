@@ -1,4 +1,4 @@
-// Usage: npm run circuit -- <name>      (default: claim)
+// Usage: npm run circuit -- <name> --new-setup      (default name: claim; see the guard below)
 // circuits/<name>.circom  ->  circuits/build/<name>.zkey (proving key)
 //                             circuits/build/<name>_js/<name>.wasm (witness generator)
 //                             circuits/build/<name>_vkey.json (verification key)
@@ -7,8 +7,18 @@ import { execFileSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 
-const name = process.argv[2] ?? "claim";
+const args = process.argv.slice(2);
+const name = args.find((a) => !a.startsWith("--")) ?? "claim";
 const Name = name[0].toUpperCase() + name.slice(1);
+
+// The committed verifier and app/public/zk files match the contract deployed on Sepolia. A rebuild
+// makes a NEW random proving key, so after it every contract must be redeployed. Ask before that.
+if (existsSync(`contracts/${Name}Verifier.sol`) && !args.includes("--new-setup")) {
+  console.error(`contracts/${Name}Verifier.sol already exists and matches the deployed contract.\n` +
+    `Rebuilding replaces it and app/public/zk with a new key, so you must redeploy afterwards.\n` +
+    `To do that on purpose: npm run circuit -- ${name} --new-setup`);
+  process.exit(1);
+}
 const out = "circuits/build";
 // PSE Perpetual Powers of Tau (80 independent contributions), capacity 2^15 = 32,768 constraints.
 const ptau = `${out}/pot15.ptau`;

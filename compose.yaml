@@ -8,6 +8,7 @@
 #   docker compose run --rm dev npm test                  # any project command, e.g. npm run demo
 #
 x-node: &node # shared settings for every service that runs project code
+  platform: linux/amd64 # circom is an x86-64 binary; Apple Silicon runs it through emulation
   build: .
   working_dir: /app
   volumes:

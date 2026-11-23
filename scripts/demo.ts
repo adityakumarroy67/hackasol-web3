@@ -1,14 +1,14 @@
 // End-to-end demo on a local test blockchain, with a written report.
 // Run (in WSL on Windows laptops with the Hardhat block):  npx hardhat run scripts/demo.ts
-// Needs `npm run circuit claim` first. ALL people, hospitals and money here are fictional / test-only.
+// Uses the committed proof files in app/public/zk. ALL people, hospitals and money here are fictional / test-only.
 import { network } from "hardhat";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as C from "../lib/claim.js";
 import * as R from "../lib/records.js";
 
 const { ethers, networkHelpers } = await network.create();
-const WASM = "circuits/build/claim_js/claim.wasm";
-const ZKEY = "circuits/build/claim.zkey";
+const WASM = "app/public/zk/claim.wasm";
+const ZKEY = "app/public/zk/claim.zkey";
 const DAY = 86_400n;
 const rupees = (paise: bigint) => "₹" + (Number(paise) / 100).toLocaleString("en-IN");
 const short = (x: string | bigint) => { const s = typeof x === "bigint" ? "0x" + x.toString(16) : x; return s.slice(0, 8) + "…" + s.slice(-4); };

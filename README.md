@@ -69,11 +69,11 @@ Open **http://localhost:5173** → **Demo accounts** → Start. No wallet is nee
 
 **Tests**
 ```bash
-docker compose run --rm dev npm run test:circuit  # 20 circuit tests
+docker compose run --rm dev npm run test:circuit  # 21 circuit tests
 docker compose run --rm dev npm run test:records  # encryption tests, including a real-IPFS round trip
 docker compose run --rm dev npm test              # 21 contract + website-interface tests (Hardhat)
 docker compose run --rm dev npm run demo          # scripted end-to-end demo, writes docs/demo-report.md
-node scripts/ui-test.mjs                          # clicks through the whole website (19 steps) in headless Chrome, on the host
+node scripts/ui-test.mjs                          # clicks through the whole website (20 steps) in headless Chrome, on the host
 ```
 Open `http://127.0.0.1:8080/ipfs/<cid>` to see an encrypted record as IPFS stores it (unreadable without the key).
 
@@ -95,7 +95,7 @@ Without an IPFS node, the demo stores encrypted files in a local `.storage/` fol
 > **Windows note:** if Smart App Control / Application Control blocks Hardhat's native binary (`edr.win32-x64-msvc.node`), use Option A (Docker) or run inside WSL2.
 
 ### Rebuilding the circuit (one person only)
-`npm run circuit claim` recompiles the circuit and creates a **new random proving key and a new `contracts/ClaimVerifier.sol`**. The two must match, so only one person rebuilds for the final version, and everyone else uses the committed files.
+`npm run circuit -- claim --new-setup` recompiles the circuit and creates a **new random proving key and a new `contracts/ClaimVerifier.sol`**. The committed files match the contracts deployed on Sepolia, and every test uses them, so rebuilding means redeploying. Without `--new-setup` the script refuses to overwrite them.
 
 ## Deployed Contracts (testnet)
 Network: **Ethereum Sepolia testnet** (chain ID 11155111). Source code verified on Blockscout and Sourcify.
@@ -134,6 +134,9 @@ Insurer / deployer account: `0x8a5f90B074566e8cddBEe472C13F103c24C6b1D7`. Also l
 | Contract development & tests | [Hardhat](https://hardhat.org) 3, [ethers](https://ethers.org) 6 | MIT |
 | Local IPFS node | [Kubo](https://github.com/ipfs/kubo) v0.43.1 (Docker image) | MIT / Apache-2.0 |
 | Frontend | [React](https://react.dev), [Vite](https://vite.dev) | MIT |
+| Interface icons | [Lucide](https://lucide.dev) (lucide-react) | ISC |
+| Interface typefaces | [IBM Plex Sans and Plex Mono](https://github.com/IBM/plex), via Google Fonts | SIL OFL 1.1 |
+| UI redesign method | [unslop](https://github.com/heydamir/unslop) by Damir Sokolovsky (@heydamir), a Claude Code skill | CC BY 4.0 |
 | Hosting / deploy tool | [Cloudflare Pages](https://pages.cloudflare.com), [Wrangler](https://github.com/cloudflare/workers-sdk) | MIT / Apache-2.0 |
 | Contract source verification | [Blockscout](https://eth-sepolia.blockscout.com), [Sourcify](https://sourcify.dev) | public services |
 | Encryption | Web Crypto API (built into browsers and Node.js): AES-256-GCM, X25519, HKDF | n/a |

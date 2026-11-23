@@ -1,5 +1,6 @@
 // App shell: welcome / connect, header, and ONE screen for the signed-in person's role.
 import { useEffect, useReducer, useState } from "react";
+import { Hospital as HospitalIcon, ShieldCheck, Stethoscope, User } from "lucide-react";
 import {
   LOCAL, SEPOLIA, TEST_ACCOUNTS, addressUrl, connectGuest, connectMetaMask, connectTestAccount, explainError,
   isDeployed, localChainAvailable, switchMetaMaskTo, testAccountAddress,
@@ -9,13 +10,14 @@ import Hospital from "./Hospital.jsx";
 import Insurer from "./Insurer.jsx";
 import Patient from "./Patient.jsx";
 import { nameOf, openInbox, openStorage, resetInbox, updateInbox, useInbox } from "./store.js";
-import { AppContext, Pill, short, useApp } from "./ui.jsx";
+import { AppContext, ErrorNote, Pill, Receipt, short, useApp } from "./ui.jsx";
 
 const ROLES = {
-  patient: { label: "Patient", icon: "🧑", text: "Keep your medical records private, choose who can read them, and approve insurance claims." },
-  hospital: { label: "Hospital", icon: "🏥", text: "Write encrypted medical records and send insurance claims backed by a zero-knowledge proof." },
-  doctor: { label: "Doctor", icon: "🩺", text: "Read records that patients share with you, for as long as they allow." },
-  insurer: { label: "Insurer", icon: "🛡️", text: "Approve hospitals, issue policies and pay verified claims." },
+  patient: { label: "Patient", icon: User, text: "Keep your medical records private, choose who can read them, and approve insurance claims." },
+  hospital: { label: "Hospital", icon: HospitalIcon, text: "Write encrypted medical records and send insurance claims backed by a zero-knowledge proof." },
+  doctor: { label: "Doctor", icon: Stethoscope, text: "Read records that patients share with you, for as long as they allow." },
+  insurer: { label: "Insurer", icon: ShieldCheck, text: "Approve hospitals, issue policies and pay verified claims." },
+  guest: { label: "Public claims", icon: ShieldCheck, text: "Every settled claim, live from the blockchain. Read-only, no wallet needed." },
 };
 
 export default function App() {
@@ -45,6 +47,9 @@ export default function App() {
     } catch (e) {
       console.error(e);
       setError(explainError(e));
+      // A MetaMask switch to an unsupported network: sign out so the welcome screen shows why,
+      // with its network buttons (the old session would only fail every transaction).
+      if (nextMode === "metamask") setSession(null);
     }
     setBusy(false);
   }
@@ -54,7 +59,7 @@ export default function App() {
   // Follow MetaMask account / network switches. Newer MetaMask versions don't always send the
   // "accountsChanged" event, so the site also checks the active account every 1.5 seconds.
   useEffect(() => {
-    if (mode !== "metamask" || !window.ethereum) return;
+    if (mode !== "metamask" || !window.ethereum || !session) return; // signed out: wait for a click
     const check = async () => {
       try {
         const [account] = await window.ethereum.request({ method: "eth_accounts" });
@@ -83,11 +88,12 @@ export default function App() {
   if (!storage) return null;
   return (
     <AppContext.Provider value={{ session, storage, refresh, refreshKey }}>
+      <a className="skip" href="#main">Skip to content</a>
       <header className="topbar">
-        <div className="brand"><span className="logo">🛡️</span> InsureTrust <small>private health insurance claims</small></div>
+        <div className="brand"><span className="logo"><ShieldCheck /></span> InsureTrust <small>private health insurance claims</small></div>
         {session && (
           <div className="status">
-            <Pill tone="info">{session.network.name}</Pill>
+            <Pill>{session.network.name}</Pill>
             {mode === "test" ? (
               <select value={testIndex} onChange={(e) => startTest(Number(e.target.value))} aria-label="Test account">
                 {TEST_ACCOUNTS.map((a) => <option key={a.index} value={a.index}>{a.name} · {ROLES[a.role].label}</option>)}
@@ -115,7 +121,7 @@ export default function App() {
           }} />
       ) : (
         <>
-          <main key={`${session.chainId}-${session.address}`}><RoleScreen /></main>
+          <main id="main" key={`${session.chainId}-${session.address}`}><RoleScreen /></main>
           <Footer session={session} mode={mode} storage={storage} />
         </>
       )}
@@ -127,22 +133,22 @@ export default function App() {
 function RoleScreen() {
   const { session } = useApp();
   const inbox = useInbox();
-  if (!session.signer || session.isInsurer) return <><PageTitle role="insurer" /><Insurer /></>;
+  if (!session.signer || session.isInsurer) return <><PageTitle role={session.signer ? "insurer" : "guest"} /><Insurer /></>;
   const me = session.address.toLowerCase();
   const role = inbox.people[me]?.role;
   if (!role || role === "insurer") {
     return (
       <section className="role-picker">
-        <h2>Welcome. How will you use InsureTrust?</h2>
-        <p className="muted">Choose once for this account.</p>
+        <h2>How will you use InsureTrust?</h2>
+        <p className="muted">Choose once for this account</p>
         <div className="role-cards">
-          {["patient", "hospital", "doctor"].map((r) => (
+          {["patient", "hospital", "doctor"].map((r) => { const Icon = ROLES[r].icon; return (
             <button key={r} className="role-card" onClick={() => updateInbox((d) => { d.people[me] = { ...(d.people[me] ?? {}), role: r }; })}>
-              <span className="role-icon">{ROLES[r].icon}</span>
+              <span className="role-icon"><Icon /></span>
               <b>I'm a {ROLES[r].label.toLowerCase()}</b>
               <span className="muted">{ROLES[r].text}</span>
             </button>
-          ))}
+          ); })}
         </div>
       </section>
     );
@@ -158,17 +164,17 @@ function PageTitle({ role }) {
   const changeRole = () => updateInbox((d) => { delete d.people[me].role; });
   return (
     <div className="page-title">
-      <h2>{ROLES[role].icon} {ROLES[role].label}{session.address && nameOf(session.address) ? ` · ${nameOf(session.address)}` : ""}</h2>
-      <p className="muted">{ROLES[role].text}{role !== "insurer" && <> · <button className="linklike" onClick={changeRole}>Change role</button></>}</p>
+      <h2>{ROLES[role].label}{session.address && nameOf(session.address) ? ` · ${nameOf(session.address)}` : ""}</h2>
+      <p className="muted">{ROLES[role].text}{role !== "insurer" && role !== "guest" && <> · <button className="linklike" onClick={changeRole}>Change role</button></>}</p>
     </div>
   );
 }
 
 function Welcome({ busy, error, testIndex, setTestIndex, onTest, onMetaMask, onGuest, onSwitch }) {
   return (
-    <main className="welcome">
+    <main id="main" className="welcome">
       <section className="hero">
-        <h1>Insurance claims that prove themselves, without revealing your diagnosis.</h1>
+        <h1>Insurance claims that prove themselves, without revealing your diagnosis</h1>
         <p>
           A hospital proves a claim follows your policy with a <b>zero-knowledge proof</b>. A smart contract checks the proof
           and pays automatically. The insurer never sees your medical details, and <b>you</b> decide who can read your records.
@@ -210,8 +216,10 @@ function Welcome({ busy, error, testIndex, setTestIndex, onTest, onMetaMask, onG
           </div>
         )}
         {busy && <p className="muted"><span className="spinner" /> Connecting…</p>}
-        {error && <p className="err">⚠ {error}</p>}
+        {error && <ErrorNote>{error}</ErrorNote>}
       </section>
+      <Receipt example no="Claim no. 0003" paidOn="21 Nov 2026, 4:12 pm" policy={<code>0x1f3a…9c2e</code>}
+        paidTo="Sanjeevani Multispeciality" amount="₹42,000" />
     </main>
   );
 }

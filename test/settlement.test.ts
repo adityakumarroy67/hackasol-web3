@@ -1,12 +1,12 @@
 // Contract tests: real proofs submitted to InsureTrust on a local test chain.
-// Run (in WSL on this laptop): npm test     — needs `npm run circuit claim` first. Fictional data only.
+// Run (in WSL on this laptop): npm test     — uses the committed proof files in app/public/zk (the ones deployed). Fictional data only.
 import { expect } from "chai";
 import { network } from "hardhat";
 import * as C from "../lib/claim.js";
 
 const { ethers, networkHelpers } = await network.create();
-const WASM = "circuits/build/claim_js/claim.wasm";
-const ZKEY = "circuits/build/claim.zkey";
+const WASM = "app/public/zk/claim.wasm";
+const ZKEY = "app/public/zk/claim.zkey";
 const DAY = 86_400n;
 
 describe("InsureTrust settlement contract", () => {

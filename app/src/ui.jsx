@@ -1,5 +1,6 @@
 // Shared screen pieces: app context, data loading, buttons, cards, formatting.
 import { Fragment, createContext, useContext, useEffect, useState } from "react";
+import { AlertCircle, BadgeCheck, Check, Eye, Lock, ShieldCheck } from "lucide-react";
 import { explainError, txUrl } from "./chain.js";
 import { nameOf, useInbox } from "./store.js";
 
@@ -82,8 +83,8 @@ export function ActionButton({ action, children, busyLabel = "Working…", disab
       <button className={`btn ${tone}${small ? " small" : ""}`} onClick={run} disabled={disabled || state.busy}>
         {state.busy ? <><span className="spinner" /> {busyLabel}</> : children}
       </button>
-      {state.ok && <p className="ok">✓ {state.ok} {link && <a href={link} target="_blank" rel="noreferrer">View transaction ↗</a>}</p>}
-      {state.error && <p className="err">⚠ {state.error}</p>}
+      {state.ok && <p className="ok"><Check /><span>{state.ok} {link && <a href={link} target="_blank" rel="noreferrer">View transaction ↗</a>}</span></p>}
+      {state.error && <ErrorNote>{state.error}</ErrorNote>}
     </div>
   );
 }
@@ -98,18 +99,18 @@ export function Who({ address }) {
 
 export const Loading = ({ what = "Loading" }) => <p className="muted"><span className="spinner" /> {what}…</p>;
 export const Empty = ({ children }) => <p className="empty">{children}</p>;
-export const ErrorNote = ({ children }) => <p className="err">⚠ {children}</p>;
+export const ErrorNote = ({ children }) => <p className="err"><AlertCircle /><span>{children}</span></p>;
 
 // "What's public vs what stays private" panel.
 export function PrivacyPanel({ publicItems, privateItems }) {
   return (
     <div className="privacy">
       <div>
-        <h4>👁 Public (on the blockchain)</h4>
+        <h4><Eye /> Public (on the blockchain)</h4>
         <ul>{publicItems.map((x) => <li key={x}>{x}</li>)}</ul>
       </div>
       <div>
-        <h4>🔒 Stays private</h4>
+        <h4><Lock /> Stays private</h4>
         <ul>{privateItems.map((x) => <li key={x}>{x}</li>)}</ul>
       </div>
     </div>
@@ -125,3 +126,25 @@ export const Summary = ({ rows }) => (
   <dl className="record">{rows.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>
 );
 export const EditButton = ({ onClick }) => <button className="btn ghost small" onClick={onClick}>Edit</button>;
+
+// Signature detail: marks only things that are actually verified on the blockchain.
+export const Seal = ({ children }) => <span className="seal"><BadgeCheck />{children}</span>;
+
+// The one rich moment: a paid claim shown as a stamped receipt. Lists only what is public.
+export function Receipt({ no, paidOn, policy, paidTo, amount, tx, example }) {
+  return (
+    <figure className="receipt">
+      {example && <figcaption>Example settlement</figcaption>}
+      <header><span><ShieldCheck /> InsureTrust</span><span>{no}</span></header>
+      <dl>
+        <dt>Paid on</dt><dd>{paidOn}</dd>
+        <dt>Policy</dt><dd>{policy}</dd>
+        <dt>Paid to</dt><dd>{paidTo}</dd>
+      </dl>
+      <div className="receipt-total"><span>Amount paid</span><b>{amount}</b></div>
+      <p className="receipt-note">Not on this receipt: diagnosis, procedure, treatment date</p>
+      {tx && <p className="receipt-tx">{tx}</p>}
+      <div className="stamp" aria-label="Proof verified on-chain"><BadgeCheck /><span>Proof<br />verified</span><small>on-chain</small></div>
+    </figure>
+  );
+}

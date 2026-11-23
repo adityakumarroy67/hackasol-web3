@@ -106,6 +106,28 @@ export async function send(txPromise) {
   return tx.wait();
 }
 
+// Every matching event since the deployment. Public RPC nodes refuse one eth_getLogs call over a
+// long block range, so this asks in ranges and shrinks the range when a node refuses.
+// ponytail: sequential ranges, re-fetched on every refresh; add caching or an indexer when history grows.
+export async function eventsOf(session, contract, filter) {
+  // The last range always ends at "latest": ethers briefly caches the block number, which can be
+  // one block behind right after a transaction, and would hide the event it just created.
+  const latest = await session.provider.getBlockNumber();
+  const events = [];
+  let step = 50_000;
+  for (let from = session.deployment.fromBlock; ; ) {
+    const to = from + step - 1;
+    try {
+      events.push(...(await contract.queryFilter(filter, from, to >= latest ? "latest" : to)));
+      if (to >= latest) return events;
+      from = to + 1;
+    } catch (e) {
+      if (step <= 1_000) throw e;
+      step = Math.floor(step / 5);
+    }
+  }
+}
+
 export const txUrl = (session, hash) => (session.network.explorer ? `${session.network.explorer}/tx/${hash}` : null);
 export const addressUrl = (session, address) => (session.network.explorer ? `${session.network.explorer}/address/${address}` : null);
 
@@ -128,17 +150,24 @@ const MESSAGES = {
 };
 const interfaces = [INSURE_TRUST_ABI, HEALTH_RECORDS_ABI, TOKEN_ABI].map((abi) => new Interface(abi));
 
-export function explainError(e) {
-  if (e?.code === "ACTION_REJECTED" || e?.info?.error?.code === 4001) return "You cancelled the request in your wallet.";
-  if (e?.code === "INSUFFICIENT_FUNDS") return "This account has no test ETH to pay the network fee.";
-  if (e?.revert?.name) return MESSAGES[e.revert.name] ?? e.revert.name;
+// The contract error's name (e.g. "AlreadyPaid"), or null when the failure wasn't a contract revert.
+export function revertName(e) {
+  if (e?.revert?.name) return e.revert.name;
   const data = e?.data ?? e?.info?.error?.data ?? e?.error?.data;
   for (const iface of interfaces) {
     try {
       const parsed = iface.parseError(data);
-      if (parsed) return MESSAGES[parsed.name] ?? parsed.name;
+      if (parsed) return parsed.name;
     } catch {}
   }
+  return null;
+}
+
+export function explainError(e) {
+  if (e?.code === "ACTION_REJECTED" || e?.info?.error?.code === 4001) return "You cancelled the request in your wallet.";
+  if (e?.code === "INSUFFICIENT_FUNDS") return "This account has no test ETH to pay the network fee.";
+  const name = revertName(e);
+  if (name) return MESSAGES[name] ?? name;
   if (e?.name === "OperationError") return "This key can't be unlocked by this account.";
   return e?.shortMessage ?? e?.message ?? String(e);
 }

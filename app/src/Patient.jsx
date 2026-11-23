@@ -2,14 +2,14 @@
 import { useState } from "react";
 import { getAddress } from "ethers";
 import * as R from "../../lib/records.js";
-import { explainError, send, txUrl } from "./chain.js";
+import { eventsOf, explainError, revertName, send, txUrl } from "./chain.js";
 import { BLOOD_GROUPS, policyNumber, procedureName } from "./catalog.js";
 import { ClaimStatus } from "./Hospital.jsx";
 import { encryptionKeyOf, publishEncryptionKey, recordKeysFor } from "./keys.js";
 import RecordView from "./RecordView.jsx";
-import { approvedList, downloadJson, nameOf, updateInbox, useInbox } from "./store.js";
+import { approvedList, downloadJson, nameOf, rootOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, EditButton, Empty, ErrorNote, Field, Loading, Pill, PrivacyPanel, Summary, Who, binder,
+  ActionButton, Card, EditButton, Empty, ErrorNote, Field, Loading, Pill, PrivacyPanel, Receipt, Summary, Who, binder,
   dateOf, dateTimeOf, nowSeconds, rupees, short, useApp, useLoad,
 } from "./ui.jsx";
 
@@ -68,7 +68,7 @@ function Locker({ published }) {
   }
   return (
     <Card title={published ? "Edit my details" : "Create your health locker"}
-      subtitle={published ? "Kept off the blockchain." : "Hospitals will add your records here, encrypted so only you can open them. Your wallet asks for one signature and one transaction."}>
+      subtitle={published ? "Kept off the blockchain" : "Hospitals will add your records here, encrypted so only you can open them. Your wallet asks for one signature and one transaction."}>
       <div className="form">
         <div className="row">
           <Field label="Full name"><input {...bind("name")} placeholder="As on your ID" /></Field>
@@ -92,6 +92,9 @@ function Locker({ published }) {
   );
 }
 
+// Contract answers that mean this proof can never be paid (the hospital must make a new one).
+const FINAL_ERRORS = new Set(["InvalidProof", "WrongDeployment", "UnknownHospitalRoot", "BadSubmissionTime", "NotPolicyHolder"]);
+
 function ClaimApprovals() {
   const { session } = useApp();
   const inbox = useInbox();
@@ -102,10 +105,13 @@ function ClaimApprovals() {
       const [a, b, c, pub] = claim.calldata;
       const receipt = await send(session.insureTrust.submitClaim(a, b, c, pub));
       updateInbox((d) => Object.assign(d.claims[claim.id], { status: "paid", txHash: receipt.hash, settledAt: nowSeconds() }));
-      return { message: `Paid! ${rupees(claim.amount)} (test tINR) went straight to the hospital.`, tx: receipt.hash };
+      return { message: `Paid. ${rupees(claim.amount)} (test tINR) went straight to the hospital.`, tx: receipt.hash };
     } catch (e) {
-      const reason = explainError(e);
-      if (!/cancelled/i.test(reason)) updateInbox((d) => Object.assign(d.claims[claim.id], { status: "rejected", reason }));
+      // Only a final answer from the contract closes the claim. No gas, an empty pool or a network
+      // error can be fixed, so the claim stays here to try again.
+      const name = revertName(e);
+      if (name === "AlreadyPaid") updateInbox((d) => Object.assign(d.claims[claim.id], { status: "paid", reason: "Paid by an earlier submission." }));
+      else if (FINAL_ERRORS.has(name)) updateInbox((d) => Object.assign(d.claims[claim.id], { status: "rejected", reason: explainError(e) }));
       throw e;
     }
   }
@@ -138,18 +144,27 @@ function ClaimApprovals() {
 
 function Records() {
   const { session, storage } = useApp();
+  const inbox = useInbox();
   const me = session.address;
   const data = useLoad(async () => {
     const hr = session.healthRecords;
-    const from = session.deployment.fromBlock;
     const ids = [...(await hr.recordsOf(me))].reverse();
-    return Promise.all(ids.map(async (id) => {
-      const [record, granted, revoked, viewed] = await Promise.all([
-        hr.records(id),
-        hr.queryFilter(hr.filters.AccessGranted(id), from),
-        hr.queryFilter(hr.filters.AccessRevoked(id), from),
-        hr.queryFilter(hr.filters.RecordViewed(id), from),
-      ]);
+    if (ids.length === 0) return { root: null, rows: [] };
+    // One history query per event type for ALL my records (not three per record).
+    const [root, allGranted, allRevoked, allViewed] = await Promise.all([
+      session.insureTrust.hospitalRoot(),
+      eventsOf(session, hr, hr.filters.AccessGranted(ids)),
+      eventsOf(session, hr, hr.filters.AccessRevoked(ids)),
+      eventsOf(session, hr, hr.filters.RecordViewed(ids)),
+    ]);
+    const blockTimes = new Map(); // many events share a block: fetch each block's time once
+    const timeOf = (e) => {
+      if (!blockTimes.has(e.blockNumber)) blockTimes.set(e.blockNumber, e.getBlock().then((b) => b.timestamp));
+      return blockTimes.get(e.blockNumber);
+    };
+    const rows = await Promise.all(ids.map(async (id) => {
+      const mineOnly = (events) => events.filter((e) => e.args.recordId === id);
+      const [record, granted, revoked, viewed] = [await hr.records(id), mineOnly(allGranted), mineOnly(allRevoked), mineOnly(allViewed)];
       const others = [...new Set(granted.map((g) => g.args.grantee))].filter((a) => a.toLowerCase() !== me.toLowerCase());
       const access = await Promise.all(others.map(async (address) => ({
         address, active: await hr.hasAccess(id, address), expiresAt: granted.filter((g) => g.args.grantee === address).at(-1).args.expiresAt,
@@ -159,10 +174,15 @@ function Records() {
         ...revoked.map((e) => ({ e, text: "Access removed for", who: e.args.grantee })),
         ...viewed.map((e) => ({ e, text: "Opened by", who: e.args.viewer })),
       ].sort((a, b) => a.e.blockNumber - b.e.blockNumber || a.e.index - b.e.index);
-      const history = await Promise.all(events.map(async (h) => ({ ...h, time: (await h.e.getBlock()).timestamp })));
+      const history = await Promise.all(events.map(async (h) => ({ ...h, time: await timeOf(h.e) })));
       return { id, record, access, history };
     }));
+    return { root, rows };
   }, [session]);
+  // Anyone can add a record to a locker (the contract doesn't restrict it), so flag records whose
+  // sender isn't on the approved-hospital list, and trust that list only if it matches the on-chain root.
+  const list = approvedList(inbox);
+  const approvedSenders = new Set(data.value && list.length > 0 && rootOf(list) === data.value.root ? list.map((h) => h.address) : []);
   const [opened, setOpened] = useState({});
 
   async function open(id, cid) {
@@ -175,15 +195,16 @@ function Records() {
 
   return (
     <Card title="My medical records" subtitle="Each record is stored encrypted off-chain. The blockchain only holds its fingerprint and who may open it." wide>
-      {data.loading && !data.value ? <Loading /> : data.error ? <ErrorNote>{data.error}</ErrorNote> : data.value.length === 0 ? (
+      {data.loading && !data.value ? <Loading /> : data.error ? <ErrorNote>{data.error}</ErrorNote> : data.value.rows.length === 0 ? (
         <Empty>No records yet. A hospital adds them after a visit (Hospital tab → Write a medical record).</Empty>
       ) : (
         <ul className="list">
-          {data.value.map(({ id, record, access, history }) => (
+          {data.value.rows.map(({ id, record, access, history }) => (
             <li key={String(id)} className="stack">
               <div className="list-row">
                 <div>
                   <b>Record #{String(id)}</b> from <Who address={record.issuer} /> · {dateOf(record.createdAt)}
+                  {!approvedSenders.has(record.issuer.toLowerCase()) && <> <Pill tone="warn">not from an approved hospital</Pill></>}
                   <div className="muted small">
                     Locked file <code>{short(record.cid)}</code>
                     {storage.viewUrl && <> · <a href={storage.viewUrl(record.cid)} target="_blank" rel="noreferrer">see what IPFS stores ↗</a></>}
@@ -326,6 +347,11 @@ function ClaimHistory() {
                   {c.txHash && txUrl(session, c.txHash) && <a href={txUrl(session, c.txHash)} target="_blank" rel="noreferrer">tx ↗</a>}
                 </div>
               </div>
+              {c.status === "paid" && (
+                <Receipt no={c.billNo ? `Bill ${c.billNo}` : `Claim ${short(c.id)}`} paidOn={c.settledAt ? dateTimeOf(c.settledAt) : "—"}
+                  policy={<code>{short(c.policyCommitment)}</code>} paidTo={<Who address={c.hospital} />} amount={rupees(c.amount)}
+                  tx={c.txHash && txUrl(session, c.txHash) && <a href={txUrl(session, c.txHash)} target="_blank" rel="noreferrer">View transaction ↗</a>} />
+              )}
               {c.status === "paid" && session.persona && (
                 <ActionButton small tone="ghost" busyLabel="Submitting again…" action={async () => {
                   const [a, b, cc, pub] = c.calldata;

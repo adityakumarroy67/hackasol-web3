@@ -1,5 +1,6 @@
 // Hospital screen: registration, encrypted medical records, insurance claims from the bill.
 import { useState } from "react";
+import { AlertCircle, Check } from "lucide-react";
 import * as C from "../../lib/claim.js";
 import * as R from "../../lib/records.js";
 import { send } from "./chain.js";
@@ -7,7 +8,7 @@ import { DIAGNOSES, PROCEDURES, policyNumber, procedureName } from "./catalog.js
 import { encryptionKeyOf, hospitalKeyFor } from "./keys.js";
 import { approvedList, nameOf, rootOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, EditButton, Field, Pill, PrivacyPanel, Summary, binder,
+  ActionButton, Card, EditButton, Field, Pill, PrivacyPanel, Seal, Summary, binder,
   dateOf, inputToSeconds, nowSeconds, rupees, secondsToInput, short, todayInput, useApp, useLoad,
 } from "./ui.jsx";
 
@@ -76,7 +77,7 @@ function Identity({ approved }) {
 
   if (published && !editing) {
     return (
-      <Card title="Your hospital" badge={<div className="actions-inline"><Pill tone={approved ? "ok" : "warn"}>{approved ? "Approved by insurer ✓" : "Waiting for insurer approval"}</Pill><EditButton onClick={() => setEditing(true)} /></div>}>
+      <Card title="Your hospital" badge={<div className="actions-inline">{approved ? <Seal>approved by insurer</Seal> : <Pill tone="warn">Waiting for insurer approval</Pill>}<EditButton onClick={() => setEditing(true)} /></div>}>
         <Summary rows={[
           ["Name", published.name], ["Registration no.", published.regNo],
           ["NABH accredited", published.nabh === "yes" ? "Yes" : published.nabh === "no" ? "No" : ""],
@@ -136,7 +137,10 @@ function WriteRecord() {
     const patientName = nameOf(patient) ?? short(patient);
     if (form.discharged < form.admitted) throw new Error("The discharge date is before the admission date.");
     if (!form.doctor.trim()) throw new Error("Enter the treating doctor's name.");
+    const bill = BILL_ITEMS.map(([k, item]) => ({ item, amount: Number(form[k] || 0) }));
+    if (bill.some((b) => !Number.isFinite(b.amount) || b.amount < 0)) throw new Error("Bill amounts can't be negative.");
     if (total <= 0) throw new Error("Enter the bill amounts.");
+    const totalPaise = BigInt(Math.round(total * 100)); // round: ₹1.15 × 100 is 114.99999… in floating point
     const patientKey = await encryptionKeyOf(session, patient);
     if (!patientKey) throw new Error(`${patientName} hasn't created their health locker yet.`);
     const diagnosis = DIAGNOSES.find((d) => d.icd === form.diagnosis);
@@ -153,7 +157,7 @@ function WriteRecord() {
         const [name, frequency, duration] = l.split(",").map((s) => s.trim());
         return { name, frequency, duration };
       }),
-      bill: BILL_ITEMS.map(([k, item]) => ({ item, amount: Number(form[k] || 0) })).filter((b) => b.amount > 0), billNo,
+      bill: bill.filter((b) => b.amount > 0), billNo,
     });
     const { ciphertext, key } = await R.encryptRecord(record); // locked in this browser
     const cid = await storage.put(ciphertext);
@@ -161,9 +165,9 @@ function WriteRecord() {
     const receipt = await send(session.healthRecords.addRecord(patient, cid, R.bytesToHex(lockedForPatient)));
     // The hospital keeps its own case file (no diagnosis) so it can bill the insurer later.
     updateInbox((d) => {
-      d.cases[billNo] = { billNo, hospital: me, patient: patient.toLowerCase(), procedureCode: Number(form.procedure), treatmentDate: inputToSeconds(form.discharged), billTotal: BigInt(total * 100), createdAt: nowSeconds() };
+      d.cases[billNo] = { billNo, hospital: me, patient: patient.toLowerCase(), procedureCode: Number(form.procedure), treatmentDate: inputToSeconds(form.discharged), billTotal: totalPaise, createdAt: nowSeconds() };
     });
-    return { message: `Record locked and added to ${patientName}'s locker (bill ${billNo}, ${rupees(total * 100)}). Only its fingerprint is on-chain.`, tx: receipt.hash };
+    return { message: `Record locked and added to ${patientName}'s locker (bill ${billNo}, ${rupees(totalPaise)}). Only its fingerprint is on-chain.`, tx: receipt.hash };
   }
 
   return (
@@ -203,6 +207,15 @@ function PrepareClaim() {
   const shared = Object.entries(inbox.policyShares).filter(([, hs]) => hs.includes(me)).map(([c]) => inbox.policies[c]).filter(Boolean);
   const cases = Object.values(inbox.cases).filter((c) => c.hospital === me && shared.some((p) => p.patient === c.patient)).sort((a, b) => Number(b.createdAt - a.createdAt));
   const [form, setForm] = useState({ policy: "", case: "", procedure: 4401, date: todayInput(-1), amount: session.persona ? 42000 : "" });
+  const [stages, setStages] = useState(null); // live progress of the proof, with real timings
+  // Runs one stage of the proof and records how long it really took.
+  async function stage(label, fn) {
+    setStages((s) => [...s, { label }]);
+    const started = performance.now();
+    const mark = (patch) => setStages((s) => s.map((x, i) => (i === s.length - 1 ? { ...x, ...patch } : x)));
+    try { const result = await fn(); mark({ ms: Math.round(performance.now() - started) }); return result; }
+    catch (e) { mark({ failed: true }); throw e; }
+  }
   const bind = binder(form, setForm);
   const policy = inbox.policies[form.policy] ?? shared[0];
   const myKey = inbox.hospitalKeys[me];
@@ -221,18 +234,24 @@ function PrepareClaim() {
 
   async function prove() {
     if (problems.length) throw new Error(problems.join(" "));
-    if (rootOf(list) !== (await session.insureTrust.hospitalRoot())) throw new Error("The approved-hospital list here doesn't match the blockchain. Ask the insurer to save it again.");
-    const hospital = await hospitalKeyFor(session);
-    const claimId = C.randomId();
-    const input = await C.buildClaim({
-      hospital, hospitals: list, policy, claimId, procedureCode: BigInt(form.procedure),
+    // Same bill -> same claim ID -> same one-time code, so the contract can never pay one bill twice.
+    const claimId = await C.stableClaimId(me, form.case ? `bill:${form.case}` : `claim:${policy.commitment}:${form.procedure}:${inputToSeconds(form.date)}:${paise}`);
+    const existing = inbox.claims[String(claimId)];
+    if (existing?.status === "paid") throw new Error("This claim has already been paid.");
+    if (existing?.status === "awaiting-patient") throw new Error("This claim is already waiting for the patient's approval.");
+    setStages([]);
+    await stage("Check the approved-hospital list on-chain", async () => {
+      if (rootOf(list) !== (await session.insureTrust.hospitalRoot())) throw new Error("The approved-hospital list here doesn't match the blockchain. Ask the insurer to save it again.");
+    });
+    const input = await stage("Sign the claim with your hospital key", async () => C.buildClaim({
+      hospital: await hospitalKeyFor(session), hospitals: list, policy, claimId, procedureCode: BigInt(form.procedure),
       claimDate: inputToSeconds(form.date), claimAmount: paise, claimSubmissionTime: nowSeconds() - 60n,
       chainId: BigInt(session.chainId), verifyingContract: session.deployment.insureTrust,
-    });
+    }));
     const started = performance.now();
-    const { proof, publicSignals } = await C.proveClaim(input, "/zk/claim.wasm", "/zk/claim.zkey");
+    const { proof, publicSignals } = await stage("Generate the zero-knowledge proof in this browser", () => C.proveClaim(input, "/zk/claim.wasm", "/zk/claim.zkey"));
     const ms = Math.round(performance.now() - started);
-    const calldata = await C.toCalldata(proof, publicSignals);
+    const calldata = await stage("Package the proof for the smart contract", () => C.toCalldata(proof, publicSignals));
     updateInbox((d) => {
       d.claims[String(claimId)] = {
         id: String(claimId), patient: policy.patient, hospital: me, policyCommitment: policy.commitment, billNo: form.case || null,
@@ -244,7 +263,7 @@ function PrepareClaim() {
   }
 
   return (
-    <Card title="Prepare an insurance claim" subtitle="Your browser creates a zero-knowledge proof that the claim follows the policy, without revealing the diagnosis, procedure or date to the insurer." wide>
+    <Card title="Prepare an insurance claim" subtitle="Your browser creates a zero-knowledge proof that the claim follows the policy, without revealing the diagnosis, procedure or date to the insurer" wide>
       <div className="two-col">
         <div className="form">
           {cases.length > 0 && (
@@ -268,7 +287,18 @@ function PrepareClaim() {
           <Field label="Amount (₹)"><input type="number" min="1" {...bind("amount")} /></Field>
           {problems.length > 0 ? (
             <div className="problems"><b>This claim can't be proved:</b><ul>{problems.map((p) => <li key={p}>{p}</li>)}</ul></div>
-          ) : policy && <p className="ok">✓ All policy rules pass. Ready to create the proof.</p>}
+          ) : policy && <p className="ok"><Check /><span>All policy rules pass. Ready to create the proof.</span></p>}
+          {stages && stages.length > 0 && (
+            <ol className="proof-steps" aria-live="polite">
+              {stages.map((s) => (
+                <li key={s.label} className={s.failed ? "failed" : s.ms !== undefined ? "done" : "active"}>
+                  {s.failed ? <AlertCircle /> : s.ms !== undefined ? <Check /> : <span className="spinner" />}
+                  <span>{s.label}</span>
+                  <span className="proof-time">{s.ms !== undefined ? `${(s.ms / 1000).toFixed(2)} s` : ""}</span>
+                </li>
+              ))}
+            </ol>
+          )}
           <ActionButton action={prove} busyLabel="Creating zero-knowledge proof…" disabled={!policy || problems.length > 0}>Create proof & send to patient</ActionButton>
         </div>
         <PrivacyPanel
@@ -280,7 +310,7 @@ function PrepareClaim() {
   );
 }
 
-const STATUS = { "awaiting-patient": ["warn", "Waiting for patient"], paid: ["ok", "Paid ✓"], rejected: ["bad", "Rejected"], declined: ["bad", "Declined by patient"] };
+const STATUS = { "awaiting-patient": ["warn", "Waiting for patient"], paid: ["ok", "Paid"], rejected: ["bad", "Rejected"], declined: ["bad", "Declined by patient"] };
 export const ClaimStatus = ({ status }) => <Pill tone={STATUS[status]?.[0] ?? "info"}>{STATUS[status]?.[1] ?? status}</Pill>;
 
 function MyClaims() {

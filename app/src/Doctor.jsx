@@ -1,7 +1,7 @@
 // Doctor screen: one-step registration (details + encryption key), then records patients shared.
 import { useState } from "react";
 import * as R from "../../lib/records.js";
-import { send } from "./chain.js";
+import { eventsOf, send } from "./chain.js";
 import { encryptionKeyOf, publishEncryptionKey, recordKeysFor } from "./keys.js";
 import RecordView from "./RecordView.jsx";
 import { updateInbox, useInbox } from "./store.js";
@@ -75,7 +75,7 @@ function SharedWithMe() {
   const me = session.address;
   const data = useLoad(async () => {
     const hr = session.healthRecords;
-    const grants = await hr.queryFilter(hr.filters.AccessGranted(null, me), session.deployment.fromBlock);
+    const grants = await eventsOf(session, hr, hr.filters.AccessGranted(null, me));
     const ids = [...new Set(grants.map((g) => g.args.recordId))];
     return Promise.all(ids.map(async (id) => ({ id, record: await hr.records(id), access: await hr.hasAccess(id, me) })));
   }, [session]);
@@ -91,7 +91,7 @@ function SharedWithMe() {
   }
 
   return (
-    <Card title="Records shared with me" subtitle="Patients give you time-limited access and can take it back at any time." wide>
+    <Card title="Records shared with me" subtitle="Patients give you time-limited access and can take it back at any time" wide>
       {data.loading && !data.value ? <Loading /> : data.error ? <ErrorNote>{data.error}</ErrorNote> : data.value.length === 0 ? (
         <Empty>No records shared with you yet. Patients can share a record from their dashboard.</Empty>
       ) : (
