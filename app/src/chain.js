@@ -147,6 +147,7 @@ const MESSAGES = {
   CannotRevokePatient: "The patient can't remove their own access.",
   UnknownRecord: "This record doesn't exist.",
   EmptyKey: "The encrypted key is missing.",
+  NotAllowedToAdd: "This patient hasn't allowed your hospital to add records. They do this when they share their policy with you.",
 };
 const interfaces = [INSURE_TRUST_ABI, HEALTH_RECORDS_ABI, TOKEN_ABI].map((abi) => new Interface(abi));
 

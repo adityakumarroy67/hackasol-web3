@@ -184,6 +184,7 @@ await step("Sanjeevani writes Aarav's record, locks it, stores the locked file a
   const aaravPublicKey = R.hexToBytes(await healthRecords.encryptionKey(aarav));
   const wrapped = await R.wrapKey(key, aaravPublicKey);
   patientWrappedKey = R.bytesToHex(wrapped);
+  await (await healthRecords.connect(aarav).setRecordWriter(sanjeevaniWallet, true)).wait(); // Aarav lets Sanjeevani write
   await (await healthRecords.connect(sanjeevaniWallet).addRecord(aarav, recordCid, patientWrappedKey)).wait();
   return `Locked file ${ciphertext.length} bytes, content ID \`${recordCid.slice(0, 14)}…\`; on-chain: content ID + a ${wrapped.length}-byte locked key for Aarav`;
 });

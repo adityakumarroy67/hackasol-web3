@@ -143,6 +143,7 @@ function WriteRecord() {
     const totalPaise = BigInt(Math.round(total * 100)); // round: ₹1.15 × 100 is 114.99999… in floating point
     const patientKey = await encryptionKeyOf(session, patient);
     if (!patientKey) throw new Error(`${patientName} hasn't created their health locker yet.`);
+    if (!(await session.healthRecords.canAddRecords(patient, me))) throw new Error(`${patientName} hasn't allowed your hospital to add records yet. They do this when they share their policy with you.`);
     const diagnosis = DIAGNOSES.find((d) => d.icd === form.diagnosis);
     const hospital = inbox.hospitalKeys[me];
     const billNo = `INV-${Date.now().toString().slice(-7)}`;

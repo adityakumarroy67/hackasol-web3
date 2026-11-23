@@ -313,9 +313,13 @@ function Policies() {
                   {hospitals.length === 0 ? <span className="muted small">No approved hospitals yet.</span> : (
                     <>
                       <select value={hospital} onChange={(e) => setPick({ ...pick, [key]: e.target.value })}>{hospitals.map(([a, h]) => <option key={a} value={a}>{h.name}</option>)}</select>
-                      <ActionButton small action={async () => {
+                      <ActionButton small busyLabel="Sharing (confirm in your wallet)…" action={async () => {
+                        // On-chain: this hospital may now add records to my locker (nobody else can).
+                        const allowed = await session.healthRecords.canAddRecords(session.address, hospital);
+                        const receipt = allowed ? null : await send(session.healthRecords.setRecordWriter(hospital, true));
                         updateInbox((d) => { const list = (d.policyShares[key] ??= []); if (!list.includes(hospital)) list.push(hospital); });
-                        return `Policy file handed to ${nameOf(hospital) ?? short(hospital)} (simulated). They can now prepare claims for you.`;
+                        const who = nameOf(hospital) ?? short(hospital);
+                        return { message: `Policy file handed to ${who} (simulated), and ${who} may now add records to your locker. They can now prepare claims for you.`, tx: receipt?.hash };
                       }}>Share with hospital</ActionButton>
                     </>
                   )}

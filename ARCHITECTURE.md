@@ -74,7 +74,7 @@ The first four come from the problem statement. The payout address is additional
 
 The current draft uses Poseidon for policy and nullifier commitments and CircomLib EdDSA-Poseidon for hospital signatures. Dates and chain IDs use 64-bit range checks; claim amount and policy limit use 128-bit range checks. These formats require security review before real use.
 
-**Size.** The current circuit compiled to 20,021 constraints. A Groth16 setup needs a Powers of Tau file with capacity of at least 2^15 (32,768). Browser proving time and on-chain gas have not yet been measured.
+**Size.** The current circuit compiles to 10,293 constraints (circom --O2). A Groth16 setup needs a Powers of Tau file with capacity of at least 2^15 (32,768). Browser proving time and on-chain gas have not yet been measured.
 
 **Contract checks, in order:** verify the proof → the approved-hospital root is accepted → the policy commitment is authorized → `claimSubmissionTime <= block.timestamp` → `chainId == block.chainid` and `verifyingContract == address(this)` → the nullifier is unused → mark the nullifier used → transfer the amount to `hospitalPayoutAddress` → emit `ClaimSettled`.
 

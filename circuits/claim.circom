@@ -170,6 +170,11 @@ template Claim(HOSPITAL_DEPTH, COVERED_DEPTH) {
     }
     coveredMembership.root === coveredRoot;
 
+    // Empty slots of the covered list hold 0, so 0 can never be a procedure code.
+    component procedureIsZero = IsZero();
+    procedureIsZero.in <== procedureCode;
+    procedureIsZero.out === 0;
+
     // A stable claim ID and policy-scoped secret give the same claim the same
     // nullifier without exposing a low-entropy claim ID to public observers.
     // Domain value 1003 separates this hash use from other Poseidon hashes.

@@ -12,13 +12,13 @@
   },
   "11155111": {
     "network": "sepolia",
-    "insureTrust": "0x09fb7E8D2Fff56e63523Cd538B78DD2517079BFa",
-    "healthRecords": "0x18e8c638379a8095c5a199d650a33315f6251659",
-    "token": "0xcb709f49266231574616FF354ADfD7DFecc9d23a",
-    "verifier": "0xe897Ab4167eC3DefB4586cF7Dc8Dd37DBfb18DBa",
+    "insureTrust": "0x2bF4749Dd6dDeB82d267e503EFA471105027BD29",
+    "healthRecords": "0x9B217447D72Ca408df7104EEC64697740EC741E9",
+    "token": "0xE88Ff848719320a0b269B356B505CfaD63Ce9E84",
+    "verifier": "0x9C078efeFDB278a579DDC953035842550f79b7c6",
     "insurer": "0x8a5f90B074566e8cddBEe472C13F103c24C6b1D7",
-    "fromBlock": 12192586,
-    "deploymentId": "0xa3477ba0ea00ad0adb47e11ab52513f4cf833e7f7287a14f4e7d22d422226725",
-    "deployedAt": "2026-11-23T01:48:37.876Z"
+    "fromBlock": 12197681,
+    "deploymentId": "0x0328b088d9d95237ead4d0c5d24488ce5d2e6994967b45b9c2a6fd979c9410f2",
+    "deployedAt": "2026-11-23T19:25:36.957Z"
   }
 }

@@ -27,6 +27,7 @@ describe("HealthRecords: encrypted records with patient-controlled access", () =
     const { ciphertext, key } = await R.encryptRecord(record);
     const cid = await store.put(ciphertext);
     const patientPublicKey = R.hexToBytes(await healthRecords.encryptionKey(patient));
+    await healthRecords.connect(patient).setRecordWriter(hospital, true); // the patient lets this hospital write
     await healthRecords.connect(hospital).addRecord(patient, cid, R.bytesToHex(await R.wrapKey(key, patientPublicKey)));
     const id = 0n;
 
@@ -89,6 +90,15 @@ describe("HealthRecords: encrypted records with patient-controlled access", () =
     await expect(healthRecords.connect(stranger).revokeAccess(id, patient)).to.be.revertedWithCustomError(healthRecords, "NotPatient");
     await expect(healthRecords.connect(patient).revokeAccess(id, patient)).to.be.revertedWithCustomError(healthRecords, "CannotRevokePatient");
     await expect(healthRecords.connect(patient).grantAccess(99, stranger, "0x01", 0)).to.be.revertedWithCustomError(healthRecords, "UnknownRecord");
+  });
+
+  it("only hospitals the patient allowed can add records, and the patient can take that back", async () => {
+    const { patient, hospital, stranger, healthRecords } = await setup();
+    await expect(healthRecords.connect(stranger).addRecord(patient, "bafyfake", "0x01")).to.be.revertedWithCustomError(healthRecords, "NotAllowedToAdd");
+    await expect(healthRecords.connect(hospital).addRecord(patient, "bafysecond", "0x01")).to.emit(healthRecords, "RecordAdded");
+    await expect(healthRecords.connect(patient).setRecordWriter(hospital, false)).to.emit(healthRecords, "RecordWriterSet").withArgs(patient.address, hospital.address, false);
+    await expect(healthRecords.connect(hospital).addRecord(patient, "bafythird", "0x01")).to.be.revertedWithCustomError(healthRecords, "NotAllowedToAdd");
+    expect(await healthRecords.recordsOf(patient)).to.deep.equal([0n, 1n]);
   });
 
   it("someone without access learns nothing, even though all on-chain data is public", async () => {

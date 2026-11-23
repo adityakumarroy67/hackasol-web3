@@ -94,6 +94,12 @@ test("rejected: amount changed after the hospital signed", async () => {
   const input = await claim(); // hospital signed ₹42,000
   return rejects({ ...input, claimAmount: 4_900_000n }); // someone tries to claim ₹49,000
 });
+test("rejected: procedure code 0, using an empty slot of the covered list", async () => {
+  // Empty slots hold 0, so code 0 has a genuine path to the covered root. The circuit must still refuse it.
+  const input = await claim({ procedureCode: 0n });
+  const empty = C.merkleTree(policy.coveredProcedures, C.COVERED_DEPTH).proof(policy.coveredProcedures.length);
+  await rejects({ ...input, coveredPath: empty.path, coveredPathIndices: empty.indices });
+});
 test("rejected: tampered hospital-list proof (changed neighbour / invalid direction bit)", async () => {
   const input = await claim();
   const path = [...input.hospitalPath]; path[0] += 1n;

@@ -26,8 +26,10 @@ contract HealthRecords {
     mapping(address => uint256[]) private recordIds; // patient => their record ids
     mapping(uint256 => mapping(address => Grant)) private grants; // record id => person => grant
     mapping(address => bytes32) public encryptionKey; // each person's public encryption key (X25519)
+    mapping(address => mapping(address => bool)) public canAddRecords; // patient => hospital => allowed
 
     event EncryptionKeySet(address indexed account, bytes32 publicKey);
+    event RecordWriterSet(address indexed patient, address indexed writer, bool allowed);
     event RecordAdded(uint256 indexed recordId, address indexed patient, address indexed issuer, string cid);
     event AccessGranted(uint256 indexed recordId, address indexed grantee, uint64 expiresAt);
     event AccessRevoked(uint256 indexed recordId, address indexed grantee);
@@ -39,6 +41,7 @@ contract HealthRecords {
     error BadExpiry();
     error CannotRevokePatient();
     error NoAccess();
+    error NotAllowedToAdd();
 
     /// Publish your public encryption key so others can share records with you.
     function setEncryptionKey(bytes32 publicKey) external {
@@ -46,8 +49,15 @@ contract HealthRecords {
         emit EncryptionKeySet(msg.sender, publicKey);
     }
 
-    /// A hospital adds an encrypted record to a patient's locker. The patient becomes its owner.
+    /// The patient chooses which hospitals may add records to their locker (and can take it back).
+    function setRecordWriter(address writer, bool allowed) external {
+        canAddRecords[msg.sender][writer] = allowed;
+        emit RecordWriterSet(msg.sender, writer, allowed);
+    }
+
+    /// A hospital the patient allowed adds an encrypted record to their locker. The patient owns it.
     function addRecord(address patient, string calldata cid, bytes calldata keyForPatient) external returns (uint256 recordId) {
+        if (msg.sender != patient && !canAddRecords[patient][msg.sender]) revert NotAllowedToAdd();
         if (keyForPatient.length == 0) revert EmptyKey();
         recordId = records.length;
         records.push(Record(patient, msg.sender, cid, uint64(block.timestamp)));

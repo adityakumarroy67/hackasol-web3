@@ -31,7 +31,9 @@ export const HEALTH_RECORDS_ABI = [
   "function recordsOf(address patient) view returns (uint256[])",
   "function hasAccess(uint256 recordId, address account) view returns (bool)",
   "function keyFor(uint256 recordId, address account) view returns (bytes)",
+  "function canAddRecords(address patient, address writer) view returns (bool)",
   "function setEncryptionKey(bytes32 publicKey)",
+  "function setRecordWriter(address writer, bool allowed)",
   "function addRecord(address patient, string cid, bytes keyForPatient) returns (uint256 recordId)",
   "function grantAccess(uint256 recordId, address grantee, bytes wrappedKey, uint64 expiresAt)",
   "function revokeAccess(uint256 recordId, address grantee)",
@@ -41,12 +43,14 @@ export const HEALTH_RECORDS_ABI = [
   "event AccessGranted(uint256 indexed recordId, address indexed grantee, uint64 expiresAt)",
   "event AccessRevoked(uint256 indexed recordId, address indexed grantee)",
   "event RecordViewed(uint256 indexed recordId, address indexed viewer)",
+  "event RecordWriterSet(address indexed patient, address indexed writer, bool allowed)",
   "error UnknownRecord()",
   "error NotPatient()",
   "error EmptyKey()",
   "error BadExpiry()",
   "error CannotRevokePatient()",
   "error NoAccess()",
+  "error NotAllowedToAdd()",
 ];
 
 export const TOKEN_ABI = [
