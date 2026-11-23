@@ -95,9 +95,10 @@ export async function openStorage() {
 }
 
 // Download / upload a JSON file (the "real life" way to hand over a policy file or proof package).
-export function downloadJson(filename, value) {
-  const url = URL.createObjectURL(new Blob([toJson(value)], { type: "application/json" }));
+export function downloadText(filename, text, type = "text/plain") {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   Object.assign(document.createElement("a"), { href: url, download: filename }).click();
   URL.revokeObjectURL(url);
 }
+export const downloadJson = (filename, value) => downloadText(filename, toJson(value), "application/json");
 export const readJsonFile = async (file) => fromJson(await file.text());

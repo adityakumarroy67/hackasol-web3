@@ -208,6 +208,15 @@ try {
     await t.click("My insurance", "Share with hospital");
     await t.waitFor("My insurance", "They can now prepare claims");
   });
+  await step("Aarav checks 'Am I covered?' before treatment (covered, then a procedure his plan excludes)", async () => {
+    await t.fill("Am I covered?", "Estimated cost", "40000");
+    await t.waitFor("Am I covered?", "within your limit");
+    await t.waitFor("Am I covered?", "Covered");
+    await js(`__t.set(__t.field("Am I covered?", "Procedure"), "9999")`); // cosmetic surgery: not in the Gold plan
+    await t.waitFor("Am I covered?", "isn't covered by your Gold plan");
+    await t.waitFor("Am I covered?", "Not covered");
+    await screenshot("patient-coverage");
+  });
   await step("Sanjeevani writes an encrypted record for Aarav (stored on IPFS)", async () => {
     await t.account(SANJEEVANI);
     await t.waitFor(null, "approved by insurer");
@@ -237,6 +246,12 @@ try {
     await t.waitFor("To do", "Approve claim ₹42,000"); // Home puts the waiting claim first
     await screenshot("patient-home");
     await t.nav("Claims");
+    // Before approving, Aarav checks the claim against the bill inside his own encrypted record.
+    await t.click("Claims waiting for your approval", "Check against my bill");
+    await t.waitFor("Claims waiting for your approval", "Amount ₹42,000 matches your bill");
+    await t.waitFor("Claims waiting for your approval", "Procedure matches your record");
+    await t.waitFor("Claims waiting for your approval", "Treatment date matches");
+    await screenshot("bill-check");
     await t.click("Claims waiting for your approval", "Approve & submit claim");
     await t.waitFor("My claim history", "Paid", 60_000);
   });
@@ -264,6 +279,15 @@ try {
     await t.waitFor("My medical records", "can open this record");
     await screenshot("patient");
   });
+  await step("Aarav's health timeline and both downloads (FHIR records, access history)", async () => {
+    await t.click("My health timeline", "Show my timeline");
+    await t.waitFor("My health timeline", "Acute appendicitis (ICD-10 K35.8)");
+    await t.click("My health timeline", "Download my records");
+    await t.waitFor("My health timeline", "as a FHIR file");
+    await t.click("My health timeline", "Download my access history");
+    await t.waitFor("My health timeline", "of your access history");
+    await screenshot("patient-timeline");
+  });
   await step("Dr. Rao opens the shared record (view is logged on-chain)", async () => {
     await t.account(DR_RAO);
     await t.click("Records shared with me", "Open");
@@ -272,6 +296,8 @@ try {
   });
   await step("Aarav revokes Dr. Rao; history shows given → opened → removed", async () => {
     await t.account(AARAV);
+    await t.waitFor("Recent activity", "opened record #0"); // Home shows who opened his record
+    await screenshot("patient-activity");
     await t.nav("Records");
     await t.click("My medical records", "Revoke");
     await t.waitFor("My medical records", "no access");

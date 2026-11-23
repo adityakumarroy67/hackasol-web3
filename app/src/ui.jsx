@@ -31,6 +31,12 @@ export const dateTimeOf = (seconds) => new Date(Number(seconds) * 1000).toLocale
 export const todayInput = (offsetDays = 0) => new Date(Date.now() + offsetDays * 86_400_000).toISOString().slice(0, 10);
 export const inputToSeconds = (yyyyMmDd) => BigInt(Date.parse(yyyyMmDd + "T00:00:00Z") / 1000); // midnight UTC
 export const nowSeconds = () => BigInt(Math.floor(Date.now() / 1000));
+// "5 minutes ago", "2 hours ago", "3 days ago" (seconds = a Unix time in the past).
+export function ago(seconds) {
+  const s = Math.max(0, Date.now() / 1000 - Number(seconds));
+  const [n, unit] = s < 3600 ? [Math.max(1, Math.round(s / 60)), "minute"] : s < 86_400 ? [Math.round(s / 3600), "hour"] : [Math.round(s / 86_400), "day"];
+  return `${n} ${unit}${n === 1 ? "" : "s"} ago`;
+}
 
 // ---------- components ----------
 export function Card({ title, subtitle, badge, children, wide }) {
