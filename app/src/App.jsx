@@ -1,34 +1,42 @@
-// App shell: welcome / connect, header, and ONE screen for the signed-in person's role.
+// App shell: sign in by role, then that person's Home (to-dos + tiles) and the pages it opens.
 import { useEffect, useReducer, useState } from "react";
-import { Hospital as HospitalIcon, ShieldCheck, Stethoscope, User } from "lucide-react";
+import { ArrowLeft, ChevronRight, Hospital as HospitalIcon, ShieldCheck, Stethoscope, User } from "lucide-react";
 import {
   LOCAL, SEPOLIA, TEST_ACCOUNTS, addressUrl, connectGuest, connectMetaMask, connectTestAccount, explainError,
   isDeployed, localChainAvailable, switchMetaMaskTo, testAccountAddress,
 } from "./chain.js";
-import Doctor, { useDoctorSections } from "./Doctor.jsx";
-import Hospital, { useHospitalSections } from "./Hospital.jsx";
-import Insurer, { useInsurerSections } from "./Insurer.jsx";
-import Patient, { usePatientSections } from "./Patient.jsx";
-import { nameOf, openInbox, openStorage, resetInbox, updateInbox, useInbox } from "./store.js";
+import Doctor, { DoctorHome } from "./Doctor.jsx";
+import Hospital, { HospitalHome } from "./Hospital.jsx";
+import Insurer, { InsurerHome } from "./Insurer.jsx";
+import Patient, { PatientHome } from "./Patient.jsx";
+import { inboxNow, nameOf, openInbox, openStorage, resetInbox, updateInbox, useInbox } from "./store.js";
 import { AppContext, ErrorNote, Pill, Receipt, Toasts, short, useApp } from "./ui.jsx";
 
 const ROLES = {
-  patient: { label: "Patient", icon: User, text: "Keep your medical records private, choose who can read them, and approve insurance claims." },
-  hospital: { label: "Hospital", icon: HospitalIcon, text: "Write encrypted medical records and send insurance claims backed by a zero-knowledge proof." },
-  doctor: { label: "Doctor", icon: Stethoscope, text: "Read records that patients share with you, for as long as they allow." },
-  insurer: { label: "Insurer", icon: ShieldCheck, text: "Approve hospitals, issue policies and pay verified claims." },
+  patient: { label: "Patient", icon: User, short: "Records, insurance, claim approvals", text: "Keep your medical records private, choose who can read them, and approve insurance claims." },
+  hospital: { label: "Hospital", icon: HospitalIcon, short: "Write records, send claims", text: "Write encrypted medical records and send insurance claims backed by a zero-knowledge proof." },
+  doctor: { label: "Doctor", icon: Stethoscope, short: "Read records patients share", text: "Read records that patients share with you, for as long as they allow." },
+  insurer: { label: "Insurer", icon: ShieldCheck, short: "Hospitals, policies, payouts", text: "Approve hospitals, issue policies and pay verified claims." },
   guest: { label: "Public claims", icon: ShieldCheck, text: "Every settled claim, live from the blockchain. Read-only, no wallet needed." },
+};
+// Page titles, per role (pages are opened from Home).
+const PAGES = {
+  patient: { records: "Records", insurance: "Insurance", claims: "Claims", profile: "My details" },
+  hospital: { records: "Records", claims: "Claims", profile: "Hospital details" },
+  doctor: { profile: "My details" },
+  insurer: { claims: "Paid claims", hospitals: "Hospitals", policies: "Policies", pool: "Money pool" },
+  guest: { claims: "Paid claims" },
 };
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [mode, setMode] = useState(null); // "test" | "metamask" | "guest"
-  const [testIndex, setTestIndex] = useState(1);
   const [storage, setStorage] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [refreshKey, refresh] = useReducer((x) => x + 1, 0);
   const [toasts, setToasts] = useState([]);
+  const inbox = useInbox();
   const dismiss = (id) => setToasts((ts) => ts.filter((t) => t.id !== id));
   const notify = (toast) => {
     const id = crypto.randomUUID();
@@ -39,7 +47,8 @@ export default function App() {
   useEffect(() => { openStorage().then(setStorage); }, []);
   useEffect(() => setToasts([]), [session?.address, session?.chainId]); // a new person starts with no old toasts
 
-  async function start(nextMode, connect) {
+  // wantRole: the role chosen on the login page (MetaMask only; demo people already have one).
+  async function start(nextMode, connect, wantRole) {
     setBusy(true);
     setError(null);
     try {
@@ -49,20 +58,20 @@ export default function App() {
         d.people[s.deployment.insurer.toLowerCase()] ??= { name: "InsureTrust Insurance", role: "insurer" };
         if (s.chainId === LOCAL) for (const a of TEST_ACCOUNTS) d.people[testAccountAddress(a.index).toLowerCase()] ??= { name: a.name, role: a.role };
       });
+      if (wantRole) claimRole(s, wantRole);
       setSession(s);
       setMode(nextMode);
       refresh();
     } catch (e) {
       console.error(e);
       setError(explainError(e));
-      // A MetaMask switch to an unsupported network: sign out so the welcome screen shows why,
-      // with its network buttons (the old session would only fail every transaction).
+      // e.g. MetaMask on an unsupported network or the wrong account: stay on the login page, which says why.
       if (nextMode === "metamask") setSession(null);
     }
     setBusy(false);
   }
-  const startTest = (index) => { setTestIndex(index); start("test", () => connectTestAccount(index)); };
-  const startMetaMask = () => start("metamask", connectMetaMask);
+  const startTest = (index) => start("test", () => connectTestAccount(index));
+  const startMetaMask = (wantRole) => start("metamask", connectMetaMask, wantRole);
 
   // Follow MetaMask account / network switches. Newer MetaMask versions don't always send the
   // "accountsChanged" event, so the site also checks the active account every 1.5 seconds.
@@ -92,8 +101,10 @@ export default function App() {
       startMetaMask();
     } catch (e) { setError(explainError(e)); }
   }
+  const signOut = () => { setSession(null); setMode(null); setError(null); };
 
   if (!storage) return null;
+  const role = session && roleOf(session, inbox);
   return (
     <AppContext.Provider value={{ session, storage, refresh, refreshKey, notify }}>
       <Toasts toasts={toasts} dismiss={dismiss} />
@@ -103,29 +114,22 @@ export default function App() {
         {session && (
           <div className="status">
             <Pill>{session.network.name}</Pill>
-            {mode === "test" ? (
-              <select value={testIndex} onChange={(e) => startTest(Number(e.target.value))} aria-label="Test account">
-                {TEST_ACCOUNTS.map((a) => <option key={a.index} value={a.index}>{a.name} · {ROLES[a.role].label}</option>)}
-              </select>
-            ) : session.address ? (
-              <>
-                <span className="who"><b>{nameOf(session.address) ?? "My wallet"}</b> <code>{short(session.address)}</code></span>
-                {mode === "metamask" && <button className="btn ghost small" onClick={switchAccount}>Switch account</button>}
-              </>
+            {session.address ? (
+              <span className="who"><b>{nameOf(session.address) ?? "My wallet"}</b>{role && ROLES[role] && <span className="muted"> · {ROLES[role].label}</span>} <code>{short(session.address)}</code></span>
             ) : <Pill>Guest (read-only)</Pill>}
-            <button className="btn ghost small" onClick={() => { setSession(null); setMode(null); }}>Sign out</button>
+            {mode === "metamask" && <button className="btn ghost small" onClick={switchAccount}>Switch account</button>}
+            <button className="btn ghost small" onClick={signOut}>Sign out</button>
           </div>
         )}
       </header>
 
       {!session ? (
-        <Welcome busy={busy} error={error} testIndex={testIndex} setTestIndex={setTestIndex}
-          onTest={startTest} onMetaMask={startMetaMask} onGuest={() => start("guest", connectGuest)}
-          onSwitch={async (chainId) => {
+        <Welcome busy={busy} error={error} onTest={startTest} onMetaMask={startMetaMask} onGuest={() => start("guest", connectGuest)}
+          onSwitch={async (chainId, wantRole) => {
             try {
               if (!window.ethereum) throw new Error("MetaMask isn't installed. Get it free at metamask.io, then reload this page.");
               await switchMetaMaskTo(chainId);
-              startMetaMask();
+              startMetaMask(wantRole);
             } catch (e) { setError(explainError(e)); }
           }} />
       ) : (
@@ -138,17 +142,29 @@ export default function App() {
   );
 }
 
-// Shows the screen for this account's role; asks once if the role is unknown.
+const roleOf = (session, inbox) => (!session.signer ? "guest" : session.isInsurer ? "insurer" : inbox.people[session.address.toLowerCase()]?.role);
+
+// A MetaMask account signs in as the role picked on the login page, if that fits the account.
+function claimRole(session, wantRole) {
+  const me = session.address.toLowerCase();
+  if (wantRole === "insurer") {
+    if (!session.isInsurer) throw new Error(`Only the insurer's account (${short(session.deployment.insurer)}) can sign in as the insurer. Switch account in MetaMask.`);
+    return;
+  }
+  if (session.isInsurer) throw new Error("This MetaMask account is the insurer's. To sign in as a patient, hospital or doctor, switch to another account in MetaMask.");
+  const current = inboxNow().people[me]?.role;
+  if (current && current !== wantRole) throw new Error(`This account is registered as a ${current}. Sign in as ${ROLES[current]?.label ?? current}, or switch account in MetaMask.`);
+  if (!current) updateInbox((d) => { d.people[me] = { ...(d.people[me] ?? {}), role: wantRole }; });
+}
+
+// The signed-in person's Home, or the page it opened. Asks for a role only if the account has none
+// (e.g. it reconnected after a MetaMask account switch).
 function RoleScreen() {
   const { session } = useApp();
   const inbox = useInbox();
-  if (!session.signer || session.isInsurer) {
-    const role = session.signer ? "insurer" : "guest";
-    return <Shell key={role} role={role} Screen={Insurer} useSections={useInsurerSections} />;
-  }
-  const me = session.address.toLowerCase();
-  const role = inbox.people[me]?.role;
-  if (!role || role === "insurer") {
+  const role = roleOf(session, inbox);
+  if (!role) {
+    const me = session.address.toLowerCase();
     return (
       <section className="role-picker">
         <h2>How will you use InsureTrust?</h2>
@@ -165,54 +181,40 @@ function RoleScreen() {
       </section>
     );
   }
-  const [Screen, useSections] = { patient: [Patient, usePatientSections], hospital: [Hospital, useHospitalSections], doctor: [Doctor, useDoctorSections] }[role];
-  return <Shell key={role} role={role} Screen={Screen} useSections={useSections} />;
+  const [Home, Page] = {
+    patient: [PatientHome, Patient], hospital: [HospitalHome, Hospital], doctor: [DoctorHome, Doctor],
+    insurer: [InsurerHome, Insurer], guest: [InsurerHome, Insurer],
+  }[role];
+  return <RoleApp key={role} role={role} Home={Home} Page={Page} />;
 }
 
-// A role's dashboard: a sidebar of its sections (tabs on phones) and the chosen section.
-// useSections() gives [{ id, label, icon, count }] and the section to open first.
-function Shell({ role, Screen, useSections }) {
-  const { sections, initial } = useSections();
-  // The opening section is chosen once (it must not jump when, say, the last waiting claim is paid),
-  // and again when registration finishes and the sidebar first appears.
-  const multi = sections.length > 1;
-  const [view, setView] = useState({ multi, id: initial });
-  if (view.multi !== multi) setView({ multi, id: initial });
-  const current = sections.some((s) => s.id === view.id) ? view.id : initial;
-  const setPicked = (id) => setView({ multi, id });
-  if (sections.length <= 1) return <><PageTitle role={role} /><Screen section={current} /></>; // e.g. before registering
+function RoleApp({ role, Home, Page }) {
+  const [page, setPage] = useState(null); // null = Home
+  const go = (p) => { setPage(p); scrollTo({ top: 0 }); };
   return (
-    <div className="shell">
-      <nav className="sidenav" aria-label={`${ROLES[role].label} sections`}>
-        <span className="sidenav-label">{ROLES[role].label}</span>
-        {sections.map(({ id, label, icon: Icon, count }) => (
-          <button key={id} aria-current={id === current ? "page" : undefined} onClick={() => { setPicked(id); scrollTo({ top: 0 }); }}>
-            <Icon /><span>{label}</span>{count > 0 && <span className="count" aria-label={`${count} need attention`}>{count}</span>}
-          </button>
-        ))}
-      </nav>
-      <div className="shell-body">
-        <PageTitle role={role} />
-        <div key={current} className="section-body"><Screen section={current} /></div>
-      </div>
-    </div>
+    <>
+      {page && <button className="back" data-nav="Home" onClick={() => go(null)}><ArrowLeft /> Home</button>}
+      <PageTitle role={role} page={page} />
+      <div key={page ?? "home"} className="section-body">{page ? <Page section={page} /> : <Home go={go} />}</div>
+    </>
   );
 }
 
-function PageTitle({ role }) {
+function PageTitle({ role, page }) {
   const { session } = useApp();
-  const me = session.address?.toLowerCase();
-  // Lets an account that picked the wrong role (or was used before) choose again. Not for the insurer.
-  const changeRole = () => updateInbox((d) => { delete d.people[me].role; });
+  const name = session.address && nameOf(session.address);
+  if (page) {
+    return <div className="page-title"><h2>{PAGES[role][page] ?? page}</h2><p className="muted">{name ? `${name} · ` : ""}{ROLES[role].label}</p></div>;
+  }
   return (
     <div className="page-title">
-      <h2>{ROLES[role].label}{session.address && nameOf(session.address) ? ` · ${nameOf(session.address)}` : ""}</h2>
-      <p className="muted">{ROLES[role].text}{role !== "insurer" && role !== "guest" && <> · <button className="linklike" onClick={changeRole}>Change role</button></>}</p>
+      <h2>{name ?? ROLES[role].label}</h2>
+      <p className="muted">{name ? `${ROLES[role].label} · ` : ""}{ROLES[role].text}</p>
     </div>
   );
 }
 
-function Welcome({ busy, error, testIndex, setTestIndex, onTest, onMetaMask, onGuest, onSwitch }) {
+function Welcome({ busy, error, onTest, onMetaMask, onGuest, onSwitch }) {
   return (
     <main id="main" className="welcome">
       <section className="hero">
@@ -227,42 +229,68 @@ function Welcome({ busy, error, testIndex, setTestIndex, onTest, onMetaMask, onG
           <li><b>Patient</b> approves. The contract verifies the proof, blocks double payment, and pays the hospital.</li>
         </ol>
       </section>
-      <section className="card connect">
-        <h3>Sign in</h3>
-        {localChainAvailable && (
-          <div className="option">
-            <h4>Demo accounts <Pill tone="ok">no wallet needed</Pill></h4>
-            <p className="muted">Fictional people on the local test chain. Switch person from the top bar.</p>
-            <div className="row">
-              <select value={testIndex} onChange={(e) => setTestIndex(Number(e.target.value))} aria-label="Start as">
-                {TEST_ACCOUNTS.map((a) => <option key={a.index} value={a.index}>{a.name} · {ROLES[a.role].label}</option>)}
-              </select>
-              <button className="btn primary" disabled={busy} onClick={() => onTest(testIndex)}>Start</button>
-            </div>
-          </div>
-        )}
-        <div className="option">
-          <h4>MetaMask</h4>
-          <p className="muted">{isDeployed(SEPOLIA) ? "Use your own wallet on the Sepolia test network (free test ETH from a faucet)." : "Connect your wallet."}</p>
-          <div className="row">
-            <button className="btn primary" disabled={busy} onClick={onMetaMask}>Connect MetaMask</button>
-            {isDeployed(SEPOLIA) && <button className="btn ghost" disabled={busy} onClick={() => onSwitch(SEPOLIA)}>Switch MetaMask to Sepolia</button>}
-            {localChainAvailable && <button className="btn ghost" disabled={busy} onClick={() => onSwitch(LOCAL)}>Add local chain to MetaMask</button>}
-          </div>
-        </div>
-        {isDeployed(SEPOLIA) && (
-          <div className="option">
-            <h4>Just looking?</h4>
-            <p className="muted">See the live, public claim settlements on Sepolia. No wallet needed.</p>
-            <button className="btn ghost" disabled={busy} onClick={onGuest}>View as guest (read-only)</button>
-          </div>
-        )}
-        {busy && <p className="muted"><span className="spinner" /> Connecting…</p>}
-        {error && <ErrorNote>{error}</ErrorNote>}
-      </section>
+      <Login busy={busy} error={error} onTest={onTest} onMetaMask={onMetaMask} onGuest={onGuest} onSwitch={onSwitch} />
       <Receipt example no="Claim no. 0003" paidOn="21 Nov 2026, 4:12 pm" policy={<code>0x1f3a…9c2e</code>}
         paidTo="Sanjeevani Multispeciality" amount="₹42,000" />
     </main>
+  );
+}
+
+// Step 1: choose a role. Step 2: choose who (a demo person, or your MetaMask account).
+function Login({ busy, error, onTest, onMetaMask, onGuest, onSwitch }) {
+  const [role, setRole] = useState(null);
+  const status = <>{busy && <p className="muted"><span className="spinner" /> Signing in…</p>}{error && <ErrorNote>{error}</ErrorNote>}</>;
+  if (!role) {
+    return (
+      <section className="card connect">
+        <h3>Sign in as</h3>
+        <div className="role-grid">
+          {["patient", "hospital", "doctor", "insurer"].map((r) => { const Icon = ROLES[r].icon; return (
+            <button key={r} className="role-card" onClick={() => setRole(r)}>
+              <span className="role-icon"><Icon /></span>
+              <b>{ROLES[r].label}</b>
+              <span className="muted">{ROLES[r].short}</span>
+            </button>
+          ); })}
+        </div>
+        {isDeployed(SEPOLIA) && (
+          <button className="btn ghost" disabled={busy} onClick={onGuest}>Just looking? View public claims as a guest</button>
+        )}
+        {status}
+      </section>
+    );
+  }
+  const people = TEST_ACCOUNTS.filter((a) => a.role === role);
+  return (
+    <section className="card connect">
+      <button className="back" onClick={() => setRole(null)}><ArrowLeft /> All roles</button>
+      <h3>Sign in as {ROLES[role].label.toLowerCase()}</h3>
+      {localChainAvailable && (
+        <div className="option">
+          <h4>Demo people <Pill tone="ok">no wallet needed</Pill></h4>
+          <div className="people">
+            {people.map((a) => (
+              <button key={a.index} className="person" disabled={busy} onClick={() => onTest(a.index)}>
+                <span>{a.name}</span><code>{short(testAccountAddress(a.index))}</code><ChevronRight />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+      <div className="option">
+        <h4>MetaMask</h4>
+        <p className="muted">
+          {role === "insurer" ? "Use the insurer's account (the one that deployed the contracts)."
+            : `Use your own ${role}'s account${isDeployed(SEPOLIA) ? " on the Sepolia test network" : ""}. Each role needs its own MetaMask account.`}
+        </p>
+        <div className="row">
+          <button className="btn primary" disabled={busy} onClick={() => onMetaMask(role)}>Connect MetaMask</button>
+          {isDeployed(SEPOLIA) && <button className="btn ghost" disabled={busy} onClick={() => onSwitch(SEPOLIA, role)}>Switch MetaMask to Sepolia</button>}
+          {localChainAvailable && <button className="btn ghost" disabled={busy} onClick={() => onSwitch(LOCAL, role)}>Add local chain to MetaMask</button>}
+        </div>
+      </div>
+      {status}
+    </section>
   );
 }
 

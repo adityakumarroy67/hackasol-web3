@@ -81,10 +81,11 @@ const HELPERS = `window.__t = {
     const box = label.querySelector("input[type=checkbox]");
     if (!box.checked) box.click();
   },
-  nav(label) {
-    const b = [...document.querySelectorAll(".sidenav button")].find((b) => b.textContent.trim().startsWith(label));
-    if (!b) throw new Error("section not found: " + label);
-    b.click();
+  nav(label) { // open a page from Home's tiles; from another page, go Home first (the caller retries)
+    const target = document.querySelector('[data-nav="' + label + '"]');
+    if (target) return target.click();
+    document.querySelector('[data-nav="Home"]')?.click();
+    throw new Error("page not reachable yet: " + label);
   },
   text(title) { return title ? this.card(title).innerText : document.body.innerText; },
   errors(title) { return [...(title ? this.card(title) : document).querySelectorAll(".err")].map((e) => e.innerText); },
@@ -112,8 +113,13 @@ const t = {
     try { errs = await js(`__t.errors(${q(card)})`); } catch {}
     throw new Error(`Timed out waiting for "${needle}" in "${card ?? "page"}". Errors on screen: ${errs.join(" | ") || "none"}. Screenshot: ${file}`);
   },
-  async account(index, tabLabel) {
-    await js(`__t.set(document.querySelector('select[aria-label="Test account"]'), ${index})`);
+  async account(index) { // sign out (if signed in), then sign in as that demo person from the login page
+    const [role, person] = PEOPLE[index];
+    await js(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Sign out")?.click()`);
+    await t.waitFor(null, "Sign in as");
+    await js(`[...document.querySelectorAll(".role-card")].find((b) => b.textContent.includes(${q(role)})).click()`);
+    await t.waitFor(null, person);
+    await js(`[...document.querySelectorAll(".person")].find((b) => b.textContent.includes(${q(person)})).click()`);
     await sleep(700);
   },
 };
@@ -126,6 +132,7 @@ async function step(name, fn) {
   catch (e) { results.push(`✖ ${name}: ${e.message}`); console.log(results.at(-1)); throw e; }
 }
 const INSURER = 0, AARAV = 1, SANJEEVANI = 5, NARMADA = 6, DR_RAO = 8;
+const PEOPLE = { [INSURER]: ["Insurer", "InsureTrust Insurance"], [AARAV]: ["Patient", "Aarav"], [SANJEEVANI]: ["Hospital", "Sanjeevani"], [NARMADA]: ["Hospital", "Narmada"], [DR_RAO]: ["Doctor", "Dr. Rao"] };
 let exitCode = 0;
 try {
   await cdp("Page.enable");
@@ -134,18 +141,17 @@ try {
   await sleep(2500);
   await js(HELPERS);
 
-  await step("welcome screen loads", async () => { await t.waitFor(null, "Sign in"); await screenshot("welcome"); });
-  await step("start as Sanjeevani hospital and create its signing key", async () => {
-    await js(`__t.set(document.querySelector('select[aria-label="Start as"]'), ${SANJEEVANI})`);
-    await js(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Start").click()`);
+  await step("welcome screen loads", async () => { await t.waitFor(null, "Sign in as"); await screenshot("welcome"); });
+  await step("sign in as Sanjeevani hospital and create its signing key", async () => {
+    await t.account(SANJEEVANI);
     await t.waitFor("Register your hospital", "Register hospital");
     await t.click("Register your hospital", "Register hospital");
-    await t.waitFor("Your hospital", "Waiting for insurer approval");
+    await t.waitFor(null, "waiting for insurer approval");
   });
   await step("Narmada hospital creates its signing key", async () => {
     await t.account(NARMADA);
     await t.click("Register your hospital", "Register hospital");
-    await t.waitFor("Your hospital", "Waiting for insurer approval");
+    await t.waitFor(null, "waiting for insurer approval");
   });
   await step("Dr. Rao registers as a doctor (publishes his encryption key)", async () => {
     await t.account(DR_RAO);
@@ -184,7 +190,7 @@ try {
   });
   await step("Sanjeevani writes an encrypted record for Aarav (stored on IPFS)", async () => {
     await t.account(SANJEEVANI);
-    await t.waitFor("Your hospital", "approved by insurer");
+    await t.waitFor(null, "approved by insurer");
     await t.nav("Records");
     await t.click("Write a medical record", "Encrypt & add");
     await t.waitFor("Write a medical record", "Record locked and added");
@@ -208,6 +214,9 @@ try {
   });
   await step("Aarav approves: contract verifies the proof and pays ₹42,000", async () => {
     await t.account(AARAV);
+    await t.waitFor("To do", "Approve claim ₹42,000"); // Home puts the waiting claim first
+    await screenshot("patient-home");
+    await t.nav("Claims");
     await t.click("Claims waiting for your approval", "Approve & submit claim");
     await t.waitFor("My claim history", "Paid", 60_000);
   });
@@ -217,7 +226,8 @@ try {
   });
   await step("the hospital can't bill the same case twice (same bill, same one-time code)", async () => {
     await t.account(SANJEEVANI);
-    await t.waitFor("Your hospital", "approved by insurer");
+    await t.waitFor(null, "approved by insurer");
+    await screenshot("hospital-home");
     await t.nav("Claims");
     await js(`(() => { const s = __t.field("Prepare an insurance claim", "Treatment case"); __t.set(s, s.options[1].value); })()`);
     await t.waitFor("Prepare an insurance claim", "All policy rules pass");
@@ -226,6 +236,7 @@ try {
     await t.account(AARAV);
   });
   await step("Aarav opens his record and shares it with Dr. Rao for 7 days", async () => {
+    await t.nav("Records");
     await t.click("My medical records", "Open");
     await t.waitFor("My medical records", "Acute appendicitis (ICD-10 K35.8)");
     await t.waitFor("My medical records", "total ₹42,000");
@@ -241,6 +252,7 @@ try {
   });
   await step("Aarav revokes Dr. Rao; history shows given → opened → removed", async () => {
     await t.account(AARAV);
+    await t.nav("Records");
     await t.click("My medical records", "Revoke");
     await t.waitFor("My medical records", "no access");
     await js(`__t.card("My medical records").querySelector("details")?.setAttribute("open", "")`);
@@ -253,6 +265,7 @@ try {
   await step("insurer dashboard shows the paid claim, verified on-chain", async () => {
     await t.account(INSURER);
     await t.waitFor("Recent claims", "₹42,000"); // the overview shows it too
+    await screenshot("insurer-home");
     await t.nav("Paid claims");
     await t.waitFor("Paid claims", "verified on-chain");
     await t.waitFor("Paid claims", "₹42,000");

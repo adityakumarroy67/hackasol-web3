@@ -1,35 +1,34 @@
-// Doctor screen: one-step registration (details + encryption key), then records patients shared.
+// Doctor screen: one-step registration (details + encryption key). Home is the records patients shared.
 import { useState } from "react";
-import { FolderLock, UserRound } from "lucide-react";
+import { UserRound } from "lucide-react";
 import * as R from "../../lib/records.js";
 import { eventsOf, send } from "./chain.js";
 import { encryptionKeyOf, publishEncryptionKey, recordKeysFor } from "./keys.js";
 import RecordView from "./RecordView.jsx";
 import { updateInbox, useInbox } from "./store.js";
-import { ActionButton, Card, EditButton, Empty, ErrorNote, Field, Loading, Pill, Summary, Who, binder, dateOf, useApp, useLoad } from "./ui.jsx";
+import { ActionButton, Card, EditButton, Empty, ErrorNote, Field, Kpi, Loading, Pill, Summary, Who, binder, dateOf, useApp, useLoad } from "./ui.jsx";
 
-// Sidebar sections; before registering there is only the registration form.
-export function useDoctorSections() {
-  const { session } = useApp();
-  const inbox = useInbox();
-  const profile = { id: "profile", label: "My details", icon: UserRound };
-  if (!inbox.people[session.address.toLowerCase()]?.details) return { sections: [profile], initial: "profile" };
-  return { sections: [{ id: "records", label: "Shared records", icon: FolderLock }, profile], initial: "records" };
-}
-
-export default function Doctor({ section }) {
+// Before registering, the registration form; afterwards the shared records (all a doctor does here).
+export function DoctorHome({ go }) {
   const { session } = useApp();
   const inbox = useInbox();
   const key = useLoad(() => encryptionKeyOf(session, session.address), [session]);
   if (key.value === undefined) return key.error ? <ErrorNote>{key.error}</ErrorNote> : <Loading />;
-  const registered = key.value !== null && inbox.people[session.address.toLowerCase()]?.details;
-  if (!registered) return <div className="grid"><Profile registered={false} keyPublished={key.value !== null} /></div>;
+  const person = inbox.people[session.address.toLowerCase()];
+  if (key.value === null || !person?.details) return <div className="grid"><Profile registered={false} keyPublished={key.value !== null} /></div>;
   return (
     <div className="grid">
-      {section === "records" && <SharedWithMe />}
-      {section === "profile" && <Profile registered keyPublished />}
+      <SharedWithMe />
+      <div className="kpis wide">
+        <Kpi icon={UserRound} label="My details" value={person.name} note={[person.details.specialty, person.details.regNo].filter(Boolean).join(" · ")} onClick={() => go("profile")} />
+      </div>
     </div>
   );
+}
+
+// The one page Home opens: the doctor's details.
+export default function Doctor() {
+  return <div className="grid"><Profile registered keyPublished /></div>;
 }
 
 const SAMPLE_DOCTOR = { specialty: "General surgery", regNo: "CGMC-2016-03321" };

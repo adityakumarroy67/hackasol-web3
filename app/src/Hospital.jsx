@@ -1,6 +1,6 @@
-// Hospital screen: registration, encrypted medical records, insurance claims from the bill.
+// Hospital screen: Home (to-dos + tiles), and pages for records, claims and hospital details.
 import { Fragment, useState } from "react";
-import { AlertCircle, Check, FilePlus2, LayoutDashboard, ReceiptText } from "lucide-react";
+import { AlertCircle, Building2, Check, FilePlus2, ReceiptText } from "lucide-react";
 import * as C from "../../lib/claim.js";
 import * as R from "../../lib/records.js";
 import { send } from "./chain.js";
@@ -8,35 +8,63 @@ import { DIAGNOSES, PROCEDURES, policyNumber, procedureName } from "./catalog.js
 import { encryptionKeyOf, hospitalKeyFor } from "./keys.js";
 import { approvedList, nameOf, rootOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, ClaimSteps, EditButton, Empty, Field, Pill, PrivacyPanel, Seal, Summary, binder,
+  ActionButton, Card, ClaimSteps, EditButton, Empty, Field, Kpi, Pill, PrivacyPanel, Seal, Summary, Todo, binder,
   dateOf, inputToSeconds, nowSeconds, rupees, secondsToInput, short, todayInput, useApp, useLoad,
 } from "./ui.jsx";
 
 const myAddress = (session) => session.address.toLowerCase();
 
-// Sidebar sections; before registering there is only the registration form.
-export function useHospitalSections() {
-  const { session } = useApp();
-  const inbox = useInbox();
-  const overview = { id: "overview", label: "Overview", icon: LayoutDashboard };
-  if (!inbox.hospitalKeys[myAddress(session)]) return { sections: [overview], initial: "overview" };
-  return {
-    sections: [overview, { id: "records", label: "Records", icon: FilePlus2 }, { id: "claims", label: "Claims", icon: ReceiptText }],
-    initial: "overview",
-  };
-}
-
-export default function Hospital({ section }) {
+// What this hospital can do right now (shared by Home and the pages, so they never disagree).
+function useHospital() {
   const { session } = useApp();
   const inbox = useInbox();
   const me = myAddress(session);
   const root = useLoad(() => session.insureTrust.hospitalRoot(), [session]);
-  if (!inbox.hospitalKeys[me]) return <div className="grid"><Identity /></div>;
   const list = approvedList(inbox);
-  const approved = inbox.approvedHospitals.includes(me) && list.length > 0 && root.value === rootOf(list);
-  const hasPatients = Object.values(inbox.people).some((p) => p.role === "patient" && p.profile);
-  const hasPolicies = Object.values(inbox.policyShares).some((hs) => hs.includes(me));
-  const hasClaims = Object.values(inbox.claims).some((c) => c.hospital === me);
+  return {
+    inbox, me,
+    registered: Boolean(inbox.hospitalKeys[me]),
+    approved: inbox.approvedHospitals.includes(me) && list.length > 0 && root.value === rootOf(list),
+    hasPatients: Object.values(inbox.people).some((p) => p.role === "patient" && p.profile),
+    hasPolicies: Object.values(inbox.policyShares).some((hs) => hs.includes(me)),
+    hasClaims: Object.values(inbox.claims).some((c) => c.hospital === me),
+  };
+}
+
+export function HospitalHome({ go }) {
+  const { inbox, me, registered, approved } = useHospital();
+  if (!registered) return <div className="grid"><Identity /></div>;
+  const cases = Object.values(inbox.cases).filter((c) => c.hospital === me);
+  const claims = Object.values(inbox.claims).filter((c) => c.hospital === me);
+  // Patients who shared a policy with this hospital, but have no record from it yet.
+  const sharedPatients = [...new Set(Object.entries(inbox.policyShares).filter(([, hs]) => hs.includes(me)).map(([c]) => inbox.policies[c]?.patient).filter(Boolean))];
+  const needRecord = sharedPatients.filter((p) => !cases.some((c) => c.patient === p));
+  // Bills with no claim yet, or whose claim was rejected or declined (it can be sent again).
+  const open = new Set(claims.filter((c) => c.status === "paid" || c.status === "awaiting-patient").map((c) => c.billNo));
+  const toClaim = cases.filter((c) => !open.has(c.billNo));
+  const todos = [
+    ...(approved ? [] : [{ text: "Waiting for the insurer to approve your hospital", detail: "You can write records now. Claims need approval first.", onClick: () => go("profile") }]),
+    ...needRecord.map((p) => ({ text: `Write ${nameOf(p) ?? short(p)}'s medical record`, detail: "Discharge summary and bill, encrypted for the patient", onClick: () => go("records") })),
+    ...(approved ? toClaim.map((c) => ({ text: `Send the claim for bill ${c.billNo}`, detail: `${nameOf(c.patient) ?? short(c.patient)} · ${procedureName(c.procedureCode)} · ${rupees(c.billTotal)}`, onClick: () => go("claims") })) : []),
+  ];
+  const paid = claims.filter((c) => c.status === "paid").length;
+  const waiting = claims.filter((c) => c.status === "awaiting-patient").length;
+  return (
+    <div className="grid">
+      <Todo items={todos} />
+      <div className="kpis wide">
+        <Kpi icon={FilePlus2} label="Records" value={cases.length} note="bills written, encrypted for patients" onClick={() => go("records")} />
+        <Kpi icon={ReceiptText} label="Claims" value={`${paid} paid`} note={waiting ? `${waiting} waiting for the patient` : "proved in your browser"} onClick={() => go("claims")} />
+        <Kpi icon={Building2} label="Hospital details" value={inbox.hospitalKeys[me].name} onClick={() => go("profile")}
+          note={approved ? <Seal>approved by insurer</Seal> : "waiting for insurer approval"} />
+      </div>
+    </div>
+  );
+}
+
+export default function Hospital({ section }) {
+  const { registered, approved, hasPatients, hasPolicies, hasClaims } = useHospital();
+  if (!registered) return <div className="grid"><Identity /></div>;
   const gettingStarted = (
     <Card title="Getting started">
       <ol className="checklist-steps">
@@ -49,7 +77,7 @@ export default function Hospital({ section }) {
   );
   return (
     <div className="grid">
-      {section === "overview" && <><Identity approved={approved} />{hasClaims ? <MyClaims /> : gettingStarted}</>}
+      {section === "profile" && <><Identity approved={approved} />{gettingStarted}</>}
       {section === "records" && (hasPatients ? <WriteRecord /> : (
         <Card title="Write a medical record" wide><Empty>No patients yet. Patients appear here once they create their health locker.</Empty></Card>
       ))}

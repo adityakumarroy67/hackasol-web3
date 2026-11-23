@@ -1,4 +1,5 @@
-// Patient screen: health locker, records (open / share / revoke / history), policies, claim approval.
+// Patient screen: Home (to-dos + tiles), and pages for records (open / share / revoke / history),
+// insurance, claim approval and personal details.
 import { useState } from "react";
 import { getAddress } from "ethers";
 import { FolderLock, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
@@ -10,29 +11,44 @@ import { encryptionKeyOf, publishEncryptionKey, recordKeysFor } from "./keys.js"
 import RecordView from "./RecordView.jsx";
 import { approvedList, downloadJson, nameOf, rootOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, ClaimSteps, EditButton, Empty, ErrorNote, Field, Loading, Pill, PrivacyPanel, Receipt, Summary, Who, binder,
+  ActionButton, Card, ClaimSteps, EditButton, Empty, ErrorNote, Field, Kpi, Loading, Pill, PrivacyPanel, Receipt, Summary, Todo, Who, binder,
   dateOf, dateTimeOf, nowSeconds, rupees, short, useApp, useLoad,
 } from "./ui.jsx";
 
-// Sidebar sections. Claims waiting for approval are counted, and open first.
-export function usePatientSections() {
+// Home: what needs the patient (claims to approve, a policy to share), then tiles for each page.
+export function PatientHome({ go }) {
   const { session } = useApp();
   const inbox = useInbox();
   const me = lower(session);
   const key = useLoad(() => encryptionKeyOf(session, session.address), [session]);
-  const profile = { id: "profile", label: "My details", icon: UserRound };
-  // Registered = encryption key on-chain (works in any browser), or just created here.
-  if (!key.value && !inbox.people[me]?.profile) return { sections: [profile], initial: "profile" };
-  const waiting = Object.values(inbox.claims).filter((c) => c.patient === me && c.status === "awaiting-patient").length;
-  return {
-    sections: [
-      { id: "records", label: "Records", icon: FolderLock },
-      { id: "insurance", label: "Insurance", icon: ShieldCheck },
-      { id: "claims", label: "Claims", icon: ReceiptText, count: waiting },
-      profile,
-    ],
-    initial: waiting ? "claims" : "records",
-  };
+  const records = useLoad(() => session.healthRecords.recordsOf(session.address), [session]);
+  if (key.value === undefined) return key.error ? <ErrorNote>{key.error}</ErrorNote> : <Loading />;
+  if (key.value === null) return <div className="grid"><Locker published={false} /></div>; // first visit: create the locker
+  const claims = Object.values(inbox.claims).filter((c) => c.patient === me);
+  const waiting = claims.filter((c) => c.status === "awaiting-patient");
+  const paid = claims.filter((c) => c.status === "paid").length;
+  const policies = Object.values(inbox.policies).filter((p) => p.patient === me);
+  const unshared = policies.filter((p) => !(inbox.policyShares[String(p.commitment)]?.length));
+  const todos = [
+    ...waiting.map((c) => ({
+      text: `Approve claim ${rupees(c.amount)} from ${nameOf(c.hospital) ?? short(c.hospital)}`,
+      detail: `${procedureName(c.procedureCode)} on ${dateOf(c.claimDate)}. The contract checks the proof and pays the hospital.`,
+      onClick: () => go("claims"),
+    })),
+    ...unshared.map((p) => ({ text: `Share your ${p.plan} policy with a hospital`, detail: "So it can add your records and prepare claims", onClick: () => go("insurance") })),
+  ];
+  return (
+    <div className="grid">
+      <Todo items={todos} />
+      <div className="kpis wide">
+        <Kpi icon={FolderLock} label="Records" value={records.value ? records.value.length : "…"} note="encrypted, only you hold the key" onClick={() => go("records")} />
+        <Kpi icon={ShieldCheck} label="Insurance" value={policies[0]?.plan ?? "None yet"} onClick={() => go("insurance")}
+          note={policies[0] ? `limit ${rupees(policies[0].policyLimit)} per claim` : "the insurer issues your policy"} />
+        <Kpi icon={ReceiptText} label="Claims" value={`${paid} paid`} note={waiting.length ? `${waiting.length} waiting for you` : "the contract pays the hospital"} onClick={() => go("claims")} />
+        <Kpi icon={UserRound} label="My details" value={inbox.people[me]?.name ?? "Add details"} note="kept off the blockchain" onClick={() => go("profile")} />
+      </div>
+    </div>
+  );
 }
 
 export default function Patient({ section }) {

@@ -1,6 +1,6 @@
 // Shared screen pieces: app context, data loading, buttons, cards, formatting.
 import { Fragment, createContext, useContext, useEffect, useState } from "react";
-import { AlertCircle, BadgeCheck, Check, Eye, Lock, ShieldCheck, X } from "lucide-react";
+import { AlertCircle, BadgeCheck, Check, ChevronRight, Eye, Lock, ShieldCheck, X } from "lucide-react";
 import { explainError, txUrl } from "./chain.js";
 import { nameOf, useInbox } from "./store.js";
 
@@ -103,10 +103,31 @@ export const Loading = ({ what = "Loading" }) => (
   <div className="skeleton" role="status" aria-label={what}><span /><span /><span /></div>
 );
 
-// One headline number with its label, for overview pages.
-export const Kpi = ({ icon: Icon, label, value, note }) => (
-  <div className="kpi"><span className="kpi-label"><Icon />{label}</span><b>{value}</b>{note && <small>{note}</small>}</div>
-);
+// One headline number with its label. With onClick it is a tile that opens that page
+// (nav names the page for tests when it differs from the label).
+export function Kpi({ icon: Icon, label, value, note, onClick, nav = label }) {
+  const body = <><span className="kpi-label"><Icon />{label}</span><b>{value}</b>{note && <small>{note}</small>}</>;
+  if (!onClick) return <div className="kpi">{body}</div>;
+  return <button className="kpi tile" data-nav={nav} onClick={onClick}>{body}<ChevronRight className="tile-go" /></button>;
+}
+
+// The person's next actions, each opening the page where it's done.
+// items: [{ text, detail, onClick }]
+export function Todo({ items }) {
+  return (
+    <Card title="To do" wide>
+      {items.length === 0 ? <Empty><Check /> Nothing needs you right now.</Empty> : (
+        <ul className="todo">
+          {items.map((i) => (
+            <li key={i.text}>
+              <button onClick={i.onClick}><span><b>{i.text}</b>{i.detail && <small>{i.detail}</small>}</span><ChevronRight /></button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
+  );
+}
 
 // Where a claim is in its journey: proof made → patient approves → contract verifies and pays.
 export function ClaimSteps({ status }) {

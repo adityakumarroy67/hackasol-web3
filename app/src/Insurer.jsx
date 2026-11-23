@@ -1,38 +1,32 @@
-// Insurer screen: overview, public claims dashboard, hospital approval, policies, money pool.
+// Insurer screen: Home (to-dos + overview), and the pages it opens: paid claims, hospitals, policies, money pool.
+// Guests (no wallet) get the same Home without to-dos, and only the paid-claims page.
 import { useState } from "react";
 import { getAddress } from "ethers";
-import { Building2, FileText, LayoutDashboard, ReceiptText, ShieldCheck, Wallet } from "lucide-react";
+import { Building2, FileText, ReceiptText, ShieldCheck, Wallet } from "lucide-react";
 import * as C from "../../lib/claim.js";
 import { eventsOf, send, txUrl } from "./chain.js";
 import { PLANS, PROCEDURES, policyNumber, procedureName } from "./catalog.js";
 import { approvedList, nameOf, rootOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, Empty, ErrorNote, Field, Kpi, Loading, Pill, Receipt, Seal, Who,
+  ActionButton, Card, Empty, ErrorNote, Field, Kpi, Loading, Pill, Receipt, Seal, Todo, Who,
   dateOf, dateTimeOf, inputToSeconds, nowSeconds, rupees, short, todayInput, useApp, useLoad,
 } from "./ui.jsx";
 
-// Sidebar sections. Guests see only the public ones. Hospitals waiting for review are counted.
-export function useInsurerSections() {
-  const { session } = useApp();
-  const inbox = useInbox();
-  const waiting = Object.keys(inbox.hospitalKeys).filter((a) => !inbox.approvedHospitals.includes(a)).length;
-  const sections = [{ id: "overview", label: "Overview", icon: LayoutDashboard }, { id: "claims", label: "Paid claims", icon: ReceiptText }];
-  if (session.isInsurer) sections.push(
-    { id: "hospitals", label: "Hospitals", icon: Building2, count: waiting },
-    { id: "policies", label: "Policies", icon: FileText },
-    { id: "pool", label: "Money pool", icon: Wallet },
-  );
-  return { sections, initial: "overview" };
-}
-
-export default function Insurer({ section }) {
+export function InsurerHome({ go }) {
   const { session } = useApp();
   return (
     <div className="grid">
-      {!session.isInsurer && section === "overview" && (
+      {!session.isInsurer && (
         <p className="notice wide">Public view. Every claim here was verified by a zero-knowledge proof on-chain and paid automatically. No medical data is ever shown.</p>
       )}
-      {section === "overview" && <Overview />}
+      <Overview go={go} />
+    </div>
+  );
+}
+
+export default function Insurer({ section }) {
+  return (
+    <div className="grid">
       {section === "claims" && <ClaimsDashboard />}
       {section === "hospitals" && <Hospitals />}
       {section === "policies" && <><IssuePolicy /><Policies /></>}
@@ -41,9 +35,12 @@ export default function Insurer({ section }) {
   );
 }
 
-function Overview() {
+const LOW_POOL = 50_000_00n; // ₹50,000 in paise: below this, suggest a top-up
+
+function Overview({ go }) {
   const { session } = useApp();
   const inbox = useInbox();
+  const insurer = session.isInsurer;
   const data = useLoad(async () => {
     const it = session.insureTrust;
     const [pool, root, settled, registered] = await Promise.all([
@@ -61,17 +58,28 @@ function Overview() {
   const v = data.value;
   const list = approvedList(inbox);
   const listOnChain = list.length > 0 && rootOf(list) === v.root;
+  const open = (page) => (insurer ? () => go(page) : undefined); // guests can't open the insurer's pages
+  // The insurer's next actions, from what's waiting.
+  const newHospitals = Object.entries(inbox.hospitalKeys).filter(([a]) => !inbox.approvedHospitals.includes(a));
+  const noPolicy = Object.entries(inbox.people).filter(([a, p]) => p.role === "patient" && p.profile && !Object.values(inbox.policies).some((pol) => pol.patient === a));
+  const todos = insurer ? [
+    ...(newHospitals.length ? [{ text: `Review ${newHospitals.length} new hospital${newHospitals.length > 1 ? "s" : ""}`, detail: newHospitals.map(([, h]) => h.name).join(", "), onClick: () => go("hospitals") }] : []),
+    ...(list.length > 0 && !listOnChain ? [{ text: "Save the approved-hospital list on-chain", detail: "Hospitals can't send claims until it matches the blockchain", onClick: () => go("hospitals") }] : []),
+    ...noPolicy.map(([, p]) => ({ text: `Issue a policy to ${p.name}`, detail: "Only the policy's fingerprint goes on-chain", onClick: () => go("policies") })),
+    ...(v.pool < LOW_POOL ? [{ text: "Top up the money pool", detail: `${rupees(v.pool)} left to pay claims`, onClick: () => go("pool") }] : []),
+  ] : null;
   return (
     <>
+      {todos && <Todo items={todos} />}
       <div className="kpis wide">
-        <Kpi icon={Wallet} label="Money pool" value={rupees(v.pool)} note="test tINR (no real value)" />
-        <Kpi icon={ReceiptText} label="Claims paid" value={v.paidCount} note={`${rupees(v.paidTotal)} in total`} />
-        <Kpi icon={FileText} label="Policies issued" value={v.policies} note="only fingerprints on-chain" />
+        <Kpi icon={Wallet} label="Money pool" value={rupees(v.pool)} note="test tINR (no real value)" onClick={open("pool")} />
+        <Kpi icon={ReceiptText} label="Claims paid" value={v.paidCount} note={`${rupees(v.paidTotal)} in total`} onClick={() => go("claims")} nav="Paid claims" />
+        <Kpi icon={FileText} label="Policies issued" value={v.policies} note="only fingerprints on-chain" onClick={open("policies")} nav="Policies" />
         {list.length === 0 && v.root ? (
           // This browser doesn't hold the list (e.g. a guest), but the blockchain has its fingerprint.
-          <Kpi icon={Building2} label="Approved hospitals" value="On-chain" note={<Seal>list fingerprint {short(v.root)}</Seal>} />
+          <Kpi icon={Building2} label="Approved hospitals" value="On-chain" note={<Seal>list fingerprint {short(v.root)}</Seal>} onClick={open("hospitals")} nav="Hospitals" />
         ) : (
-          <Kpi icon={Building2} label="Approved hospitals" value={list.length}
+          <Kpi icon={Building2} label="Approved hospitals" value={list.length} onClick={open("hospitals")} nav="Hospitals"
             note={list.length === 0 ? "none yet" : listOnChain ? <Seal>list saved on-chain</Seal> : "list not saved on-chain"} />
         )}
       </div>

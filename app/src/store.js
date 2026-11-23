@@ -43,6 +43,8 @@ export function resetInbox() {
   listeners.forEach((l) => l());
 }
 
+export const inboxNow = () => inbox; // for code outside React (sign-in checks)
+
 export function useInbox() {
   return useSyncExternalStore((l) => (listeners.add(l), () => listeners.delete(l)), () => inbox);
 }
