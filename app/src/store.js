@@ -7,7 +7,7 @@ import { useSyncExternalStore } from "react";
 import { HOSPITAL_DEPTH, fromJson, hash, merkleTree, toJson } from "../../lib/claim.js";
 import * as R from "../../lib/records.js";
 
-const EMPTY = { people: {}, hospitalKeys: {}, approvedHospitals: [], policies: {}, policyShares: {}, claims: {} };
+const EMPTY = { people: {}, hospitalKeys: {}, approvedHospitals: [], policies: {}, policyShares: {}, claims: {}, cases: {} };
 const listeners = new Set();
 let storageKey = null;
 let inbox = EMPTY;

@@ -1,35 +1,35 @@
-// App shell: welcome / connect, header with network + storage + account, role tabs.
+// App shell: welcome / connect, header, and ONE screen for the signed-in person's role.
 import { useEffect, useReducer, useState } from "react";
 import {
   LOCAL, SEPOLIA, TEST_ACCOUNTS, addressUrl, connectGuest, connectMetaMask, connectTestAccount, explainError,
   isDeployed, localChainAvailable, switchMetaMaskTo, testAccountAddress,
 } from "./chain.js";
+import Doctor from "./Doctor.jsx";
 import Hospital from "./Hospital.jsx";
 import Insurer from "./Insurer.jsx";
 import Patient from "./Patient.jsx";
-import { nameOf, openInbox, openStorage, resetInbox, updateInbox } from "./store.js";
-import { AppContext, Pill, short } from "./ui.jsx";
+import { nameOf, openInbox, openStorage, resetInbox, updateInbox, useInbox } from "./store.js";
+import { AppContext, Pill, short, useApp } from "./ui.jsx";
 
-const TABS = [
-  { id: "patient", label: "Patient", icon: "🧑‍⚕️" },
-  { id: "hospital", label: "Hospital & doctor", icon: "🏥" },
-  { id: "insurer", label: "Insurer", icon: "🛡️" },
-];
-const TAB_FOR_ROLE = { patient: "patient", hospital: "hospital", doctor: "hospital", insurer: "insurer" };
+const ROLES = {
+  patient: { label: "Patient", icon: "🧑", text: "Keep your medical records private, choose who can read them, and approve insurance claims." },
+  hospital: { label: "Hospital", icon: "🏥", text: "Write encrypted medical records and send insurance claims backed by a zero-knowledge proof." },
+  doctor: { label: "Doctor", icon: "🩺", text: "Read records that patients share with you, for as long as they allow." },
+  insurer: { label: "Insurer", icon: "🛡️", text: "Approve hospitals, issue policies and pay verified claims." },
+};
 
 export default function App() {
   const [session, setSession] = useState(null);
   const [mode, setMode] = useState(null); // "test" | "metamask" | "guest"
   const [testIndex, setTestIndex] = useState(1);
   const [storage, setStorage] = useState(null);
-  const [tab, setTab] = useState("patient");
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [refreshKey, refresh] = useReducer((x) => x + 1, 0);
 
   useEffect(() => { openStorage().then(setStorage); }, []);
 
-  async function start(nextMode, connect, nextTab) {
+  async function start(nextMode, connect) {
     setBusy(true);
     setError(null);
     try {
@@ -41,10 +41,6 @@ export default function App() {
       });
       setSession(s);
       setMode(nextMode);
-      // Open the tab that fits this account (known demo accounts on the local chain).
-      const known = s.chainId === LOCAL && s.address && TEST_ACCOUNTS.find((a) => testAccountAddress(a.index).toLowerCase() === s.address.toLowerCase());
-      const tabForAccount = nextTab ?? (known ? TAB_FOR_ROLE[known.role] : s.isInsurer ? "insurer" : null);
-      if (tabForAccount) setTab(tabForAccount);
       refresh();
     } catch (e) {
       console.error(e);
@@ -52,7 +48,7 @@ export default function App() {
     }
     setBusy(false);
   }
-  const startTest = (index) => { setTestIndex(index); start("test", () => connectTestAccount(index), TAB_FOR_ROLE[TEST_ACCOUNTS[index].role]); };
+  const startTest = (index) => { setTestIndex(index); start("test", () => connectTestAccount(index)); };
   const startMetaMask = () => start("metamask", connectMetaMask);
 
   // Follow MetaMask account / network switches. Newer MetaMask versions don't always send the
@@ -92,26 +88,24 @@ export default function App() {
         {session && (
           <div className="status">
             <Pill tone="info">{session.network.name}</Pill>
-            <Pill tone={storage.kind === "ipfs" ? "ok" : "warn"}>Files: {storage.label}</Pill>
             {mode === "test" ? (
               <select value={testIndex} onChange={(e) => startTest(Number(e.target.value))} aria-label="Test account">
-                {TEST_ACCOUNTS.map((a) => <option key={a.index} value={a.index}>{a.name} · {a.role}</option>)}
+                {TEST_ACCOUNTS.map((a) => <option key={a.index} value={a.index}>{a.name} · {ROLES[a.role].label}</option>)}
               </select>
             ) : session.address ? (
               <>
                 <span className="who"><b>{nameOf(session.address) ?? "My wallet"}</b> <code>{short(session.address)}</code></span>
-                {mode === "metamask" && <button className="btn primary small" onClick={switchAccount}>Switch account</button>}
+                {mode === "metamask" && <button className="btn ghost small" onClick={switchAccount}>Switch account</button>}
               </>
             ) : <Pill>Guest (read-only)</Pill>}
-            <button className="btn ghost small" onClick={() => { setSession(null); setMode(null); }}>Change</button>
+            <button className="btn ghost small" onClick={() => { setSession(null); setMode(null); }}>Sign out</button>
           </div>
         )}
       </header>
-      <p className="banner">Demo with <b>fictional people</b> and <b>test money</b> (tINR has no value). Never enter real medical data.</p>
 
       {!session ? (
         <Welcome busy={busy} error={error} testIndex={testIndex} setTestIndex={setTestIndex}
-          onTest={startTest} onMetaMask={startMetaMask} onGuest={() => start("guest", connectGuest, "insurer")}
+          onTest={startTest} onMetaMask={startMetaMask} onGuest={() => start("guest", connectGuest)}
           onSwitch={async (chainId) => {
             try {
               if (!window.ethereum) throw new Error("MetaMask isn't installed. Get it free at metamask.io, then reload this page.");
@@ -121,16 +115,52 @@ export default function App() {
           }} />
       ) : (
         <>
-          <nav className="tabs">
-            {TABS.map((t) => <button key={t.id} className={tab === t.id ? "active" : ""} onClick={() => setTab(t.id)}>{t.icon} {t.label}</button>)}
-          </nav>
-          <main key={`${session.chainId}-${session.address}`}>
-            {tab === "patient" ? <Patient /> : tab === "hospital" ? <Hospital /> : <Insurer />}
-          </main>
-          <Footer session={session} mode={mode} />
+          <main key={`${session.chainId}-${session.address}`}><RoleScreen /></main>
+          <Footer session={session} mode={mode} storage={storage} />
         </>
       )}
     </AppContext.Provider>
+  );
+}
+
+// Shows the screen for this account's role; asks once if the role is unknown.
+function RoleScreen() {
+  const { session } = useApp();
+  const inbox = useInbox();
+  if (!session.signer || session.isInsurer) return <><PageTitle role="insurer" /><Insurer /></>;
+  const me = session.address.toLowerCase();
+  const role = inbox.people[me]?.role;
+  if (!role || role === "insurer") {
+    return (
+      <section className="role-picker">
+        <h2>Welcome. How will you use InsureTrust?</h2>
+        <p className="muted">Choose once for this account.</p>
+        <div className="role-cards">
+          {["patient", "hospital", "doctor"].map((r) => (
+            <button key={r} className="role-card" onClick={() => updateInbox((d) => { d.people[me] = { ...(d.people[me] ?? {}), role: r }; })}>
+              <span className="role-icon">{ROLES[r].icon}</span>
+              <b>I'm a {ROLES[r].label.toLowerCase()}</b>
+              <span className="muted">{ROLES[r].text}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    );
+  }
+  const Screen = { patient: Patient, hospital: Hospital, doctor: Doctor }[role];
+  return <><PageTitle role={role} /><Screen /></>;
+}
+
+function PageTitle({ role }) {
+  const { session } = useApp();
+  const me = session.address?.toLowerCase();
+  // Lets an account that picked the wrong role (or was used before) choose again. Not for the insurer.
+  const changeRole = () => updateInbox((d) => { delete d.people[me].role; });
+  return (
+    <div className="page-title">
+      <h2>{ROLES[role].icon} {ROLES[role].label}{session.address && nameOf(session.address) ? ` · ${nameOf(session.address)}` : ""}</h2>
+      <p className="muted">{ROLES[role].text}{role !== "insurer" && <> · <button className="linklike" onClick={changeRole}>Change role</button></>}</p>
+    </div>
   );
 }
 
@@ -150,14 +180,14 @@ function Welcome({ busy, error, testIndex, setTestIndex, onTest, onMetaMask, onG
         </ol>
       </section>
       <section className="card connect">
-        <h3>Get started</h3>
+        <h3>Sign in</h3>
         {localChainAvailable && (
           <div className="option">
-            <h4>Local test accounts <Pill tone="ok">no wallet needed</Pill></h4>
-            <p className="muted">Fake money on the local test chain. Switch between patient, hospital and insurer in one click.</p>
+            <h4>Demo accounts <Pill tone="ok">no wallet needed</Pill></h4>
+            <p className="muted">Fictional people on the local test chain. Switch person from the top bar.</p>
             <div className="row">
               <select value={testIndex} onChange={(e) => setTestIndex(Number(e.target.value))} aria-label="Start as">
-                {TEST_ACCOUNTS.map((a) => <option key={a.index} value={a.index}>{a.name} · {a.role}</option>)}
+                {TEST_ACCOUNTS.map((a) => <option key={a.index} value={a.index}>{a.name} · {ROLES[a.role].label}</option>)}
               </select>
               <button className="btn primary" disabled={busy} onClick={() => onTest(testIndex)}>Start</button>
             </div>
@@ -165,7 +195,7 @@ function Welcome({ busy, error, testIndex, setTestIndex, onTest, onMetaMask, onG
         )}
         <div className="option">
           <h4>MetaMask</h4>
-          <p className="muted">{isDeployed(SEPOLIA) ? "Use your own test wallet on the Sepolia test network (free test ETH from a faucet)." : "Connect your wallet."}</p>
+          <p className="muted">{isDeployed(SEPOLIA) ? "Use your own wallet on the Sepolia test network (free test ETH from a faucet)." : "Connect your wallet."}</p>
           <div className="row">
             <button className="btn primary" disabled={busy} onClick={onMetaMask}>Connect MetaMask</button>
             {isDeployed(SEPOLIA) && <button className="btn ghost" disabled={busy} onClick={() => onSwitch(SEPOLIA)}>Switch MetaMask to Sepolia</button>}
@@ -186,7 +216,7 @@ function Welcome({ busy, error, testIndex, setTestIndex, onTest, onMetaMask, onG
   );
 }
 
-function Footer({ session, mode }) {
+function Footer({ session, mode, storage }) {
   const d = session.deployment;
   const link = (label, address) => {
     const url = addressUrl(session, address);
@@ -194,8 +224,8 @@ function Footer({ session, mode }) {
   };
   return (
     <footer>
-      <div>Contracts on {session.network.name}: {link("InsureTrust", d.insureTrust)} · {link("HealthRecords", d.healthRecords)} · {link("ClaimVerifier", d.verifier)} · {link("tINR", d.token)}</div>
-      <div className="muted">Hack-a-Sol 5.0 · Web3 track W3-01 · fictional data only
+      <div>Contracts on {session.network.name}: {link("InsureTrust", d.insureTrust)} · {link("HealthRecords", d.healthRecords)} · {link("ClaimVerifier", d.verifier)} · {link("tINR", d.token)} · Encrypted files: {storage.label}</div>
+      <div className="muted">Test network with fictional data and test money (tINR has no value). Never enter real medical data. · Hack-a-Sol 5.0 · W3-01
         {mode === "test" && <> · <button className="linklike" onClick={() => { resetInbox(); location.reload(); }}>clear this browser's demo data</button></>}
       </div>
     </footer>

@@ -59,7 +59,6 @@ h4 { font-size: 0.95rem; }
 .logo { font-size: 1.4rem; }
 .status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .status select { width: auto; max-width: 320px; padding: 6px 10px; }
-.banner { margin: 0; padding: 8px clamp(16px, 4vw, 40px); background: var(--warn-bg); color: var(--warn); font-size: 0.85rem; text-align: center; }
 
 /* ---------- tabs & layout ---------- */
 .tabs { display: flex; gap: 6px; padding: 16px clamp(16px, 4vw, 40px) 0; max-width: 1240px; margin: 0 auto; overflow-x: auto; }
@@ -93,9 +92,9 @@ main { max-width: 1240px; margin: 0 auto; padding: 16px clamp(16px, 4vw, 40px) 4
 .field { display: flex; flex-direction: column; gap: 4px; }
 .field-label { font-size: 0.85rem; font-weight: 600; }
 .hint { font-size: 0.78rem; color: var(--muted); }
-input, select { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; min-width: 0; width: 100%; }
+input, select, textarea { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; min-width: 0; width: 100%; }
 input[type="checkbox"] { width: auto; }
-input:focus, select:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
+input:focus, select:focus, textarea:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chip { border: 1px solid var(--line); border-radius: 999px; padding: 5px 10px; font-size: 0.85rem; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 .chip.on { background: var(--soft); border-color: var(--primary); }
@@ -168,3 +167,16 @@ th { color: var(--muted); font-weight: 600; font-size: 0.8rem; }
 .option h4 { display: flex; gap: 8px; align-items: center; }
 
 footer { max-width: 1240px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 40px) 32px; font-size: 0.85rem; display: flex; flex-direction: column; gap: 4px; }
+
+/* ---------- role screens ---------- */
+.page-title { margin: 8px 0 16px; }
+.page-title h2 { margin: 0; font-size: 1.4rem; }
+.page-title p { margin: 4px 0 0; }
+.role-picker { max-width: 900px; margin: 40px auto; text-align: center; }
+.role-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin-top: 20px; }
+.role-card { font: inherit; color: var(--text); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 22px 18px; display: flex; flex-direction: column; gap: 8px; align-items: center; cursor: pointer; box-shadow: var(--shadow); }
+.role-card:hover { border-color: var(--primary); }
+.role-icon { font-size: 2rem; }
+.checklist-steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; }
+.checklist-steps li.done { color: var(--ok); }
+.checklist-steps li.done::after { content: " ✓"; }

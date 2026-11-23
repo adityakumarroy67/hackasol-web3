@@ -3,60 +3,91 @@ import { useState } from "react";
 import { getAddress } from "ethers";
 import * as R from "../../lib/records.js";
 import { explainError, send, txUrl } from "./chain.js";
-import { procedureName } from "./catalog.js";
+import { BLOOD_GROUPS, policyNumber, procedureName } from "./catalog.js";
 import { ClaimStatus } from "./Hospital.jsx";
 import { encryptionKeyOf, publishEncryptionKey, recordKeysFor } from "./keys.js";
 import RecordView from "./RecordView.jsx";
-import { downloadJson, nameOf, updateInbox, useInbox } from "./store.js";
+import { approvedList, downloadJson, nameOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, Empty, ErrorNote, Field, Loading, Pill, PrivacyPanel, Who,
+  ActionButton, Card, EditButton, Empty, ErrorNote, Field, Loading, Pill, PrivacyPanel, Summary, Who, binder,
   dateOf, dateTimeOf, nowSeconds, rupees, short, useApp, useLoad,
 } from "./ui.jsx";
 
 export default function Patient() {
   const { session } = useApp();
-  if (!session.signer) return <p className="notice">Connect a wallet to use the patient screen.</p>;
+  const inbox = useInbox();
+  const key = useLoad(() => encryptionKeyOf(session, session.address), [session]);
+  if (key.value === undefined) return key.error ? <ErrorNote>{key.error}</ErrorNote> : <Loading />;
+  if (key.value === null) return <div className="grid"><Locker published={false} /></div>;
+  const mine = Object.values(inbox.claims).filter((c) => c.patient === lower(session));
   return (
     <div className="grid">
-      <Locker />
-      <ClaimApprovals />
+      {mine.some((c) => c.status === "awaiting-patient") && <ClaimApprovals />}
       <Records />
+      <Locker published />
       <Policies />
-      <ClaimHistory />
+      {mine.some((c) => c.status !== "awaiting-patient") && <ClaimHistory />}
     </div>
   );
 }
 
 const lower = (session) => session.address.toLowerCase();
 
-function Locker() {
+// Fictional sample details, used only for the local demo people.
+const SAMPLE_PROFILE = { birthDate: "1994-06-12", gender: "male", phone: "+91 98765 43210", abha: "91-4821-7730-5519", bloodGroup: "B+", emergencyContact: "Sunita (mother), +91 98260 11223" };
+const BLANK_PROFILE = { birthDate: "", gender: "", phone: "", abha: "", bloodGroup: "", emergencyContact: "" };
+
+function Locker({ published }) {
   const { session } = useApp();
   const inbox = useInbox();
   const me = lower(session);
-  const onChain = useLoad(() => encryptionKeyOf(session, session.address), [session]);
-  const [name, setName] = useState(nameOf(me) ?? "");
-  const published = onChain.value != null;
+  const person = inbox.people[me];
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState(() => ({ name: person?.name ?? "", ...(session.persona ? SAMPLE_PROFILE : BLANK_PROFILE), ...(person?.profile ?? {}) }));
+  const bind = binder(form, setForm);
+  const p = person?.profile ?? {};
 
-  async function unlock() {
-    if (!inbox.people[me]) {
-      if (!name.trim()) throw new Error("Enter your name first.");
-      updateInbox((d) => { d.people[me] = { name: name.trim(), role: "patient" }; });
-    }
-    await publishEncryptionKey(session); // one wallet signature (+ one transaction the first time)
-    return "Locker unlocked. Your public key is on-chain, so hospitals can add records that only you can open.";
+  async function save() {
+    const name = form.name.trim();
+    if (!name) throw new Error("Enter your full name.");
+    if (!form.birthDate || !form.gender) throw new Error("Enter your date of birth and gender.");
+    if (form.abha && !/^\d{2}-?\d{4}-?\d{4}-?\d{4}$/.test(form.abha.trim())) throw new Error("The ABHA number has 14 digits, e.g. 91-1234-5678-9012.");
+    const { name: _name, ...profile } = form;
+    if (!published) await publishEncryptionKey(session); // one wallet signature + one transaction
+    updateInbox((d) => { d.people[me] = { ...(d.people[me] ?? {}), name, role: "patient", profile }; });
+    setEditing(false);
+    return published ? "Details saved." : "Your health locker is ready.";
   }
 
+  if (published && !editing) {
+    return (
+      <Card title="My details" subtitle="Kept off the blockchain. Hospitals copy them into your encrypted records." badge={<EditButton onClick={() => setEditing(true)} />}>
+        <Summary rows={[["Name", person?.name], ["Date of birth", p.birthDate], ["Gender", p.gender], ["Blood group", p.bloodGroup], ["ABHA number", p.abha], ["Mobile", p.phone], ["Emergency contact", p.emergencyContact]]} />
+      </Card>
+    );
+  }
   return (
-    <Card title="Your health locker" subtitle="Records are encrypted for you. Your private key is re-created from your wallet when needed and never stored."
-      badge={onChain.loading && onChain.value === undefined ? null : <Pill tone={published ? "ok" : "warn"}>{published ? "Unlocked ✓" : "Locked"}</Pill>}>
-      {published ? (
-        <p>Ready. Hospitals can add records to your locker, and you choose who else may read them.</p>
-      ) : (
-        <div className="form">
-          {!inbox.people[me] && <Field label="Your name (shown to hospitals and the insurer in this demo)"><input value={name} onChange={(e) => setName(e.target.value)} /></Field>}
-          <ActionButton action={unlock} busyLabel="Unlocking (sign in your wallet)…">Unlock my locker</ActionButton>
+    <Card title={published ? "Edit my details" : "Create your health locker"}
+      subtitle={published ? "Kept off the blockchain." : "Hospitals will add your records here, encrypted so only you can open them. Your wallet asks for one signature and one transaction."}>
+      <div className="form">
+        <div className="row">
+          <Field label="Full name"><input {...bind("name")} placeholder="As on your ID" /></Field>
+          <Field label="Date of birth"><input type="date" {...bind("birthDate")} /></Field>
         </div>
-      )}
+        <div className="row">
+          <Field label="Gender"><select {...bind("gender")}><option value="">Select</option><option value="female">Female</option><option value="male">Male</option><option value="other">Other</option></select></Field>
+          <Field label="Blood group"><select {...bind("bloodGroup")}><option value="">Select</option>{BLOOD_GROUPS.map((b) => <option key={b}>{b}</option>)}</select></Field>
+        </div>
+        <div className="row">
+          <Field label="ABHA number" hint="Ayushman Bharat Health Account ID (optional)"><input {...bind("abha")} placeholder="91-1234-5678-9012" /></Field>
+          <Field label="Mobile"><input {...bind("phone")} placeholder="+91 …" /></Field>
+        </div>
+        <Field label="Emergency contact"><input {...bind("emergencyContact")} placeholder="Name, relation, phone" /></Field>
+        <div className="actions-inline">
+          <ActionButton action={save} busyLabel={published ? "Saving…" : "Creating (confirm in your wallet)…"}>{published ? "Save" : "Create my health locker"}</ActionButton>
+          {published && <button className="btn ghost" onClick={() => setEditing(false)}>Cancel</button>}
+        </div>
+      </div>
     </Card>
   );
 }
@@ -87,7 +118,7 @@ function ClaimApprovals() {
           {waiting.map((c) => (
             <li key={c.id} className="stack">
               <div className="list-row">
-                <div><b>{rupees(c.amount)}</b> to <Who address={c.hospital} /><div className="muted small">{procedureName(c.procedureCode)} on {dateOf(c.claimDate)} · proof made in {(c.proofMs / 1000).toFixed(1)} s</div></div>
+                <div><b>{rupees(c.amount)}</b> to <Who address={c.hospital} /><div className="muted small">{c.billNo ? `Bill ${c.billNo} · ` : ""}{procedureName(c.procedureCode)} on {dateOf(c.claimDate)} · proof made in {(c.proofMs / 1000).toFixed(1)} s</div></div>
               </div>
               <PrivacyPanel
                 publicItems={[`Amount ${rupees(c.amount)}`, "Your policy fingerprint", "Hospital's payout wallet"]}
@@ -200,8 +231,8 @@ function ShareRecord({ id }) {
   const { session } = useApp();
   const inbox = useInbox();
   const me = lower(session);
-  const people = Object.entries(inbox.people).filter(([a, p]) => a !== me && p.role !== "insurer");
-  const [to, setTo] = useState(people.find(([, p]) => p.role === "doctor")?.[0] ?? people[0]?.[0] ?? "");
+  const people = Object.entries(inbox.people).filter(([a, p]) => a !== me && p.role === "doctor");
+  const [to, setTo] = useState(people[0]?.[0] ?? "");
   const [days, setDays] = useState(7);
 
   async function share() {
@@ -220,9 +251,9 @@ function ShareRecord({ id }) {
 
   return (
     <div className="share">
-      <Field label="Share with" hint={nameOf(to) ? `= ${nameOf(to)}` : "Pick from the list or paste a wallet address"}>
+      <Field label="Share with a doctor" hint={nameOf(to) ? `= ${nameOf(to)}` : "Pick a doctor or paste their wallet address"}>
         <input list={`people-${id}`} value={to} onChange={(e) => setTo(e.target.value)} placeholder="0x… wallet address" />
-        <datalist id={`people-${id}`}>{people.map(([a, p]) => <option key={a} value={a}>{p.name} ({p.role})</option>)}</datalist>
+        <datalist id={`people-${id}`}>{people.map(([a, p]) => <option key={a} value={a}>{p.name} ({p.details?.specialty ?? p.role})</option>)}</datalist>
       </Field>
       <Field label="For (days)" hint="0 = until I revoke"><input type="number" min="0" value={days} onChange={(e) => setDays(e.target.value)} /></Field>
       <ActionButton small action={share} busyLabel="Sharing…">Share</ActionButton>
@@ -235,7 +266,7 @@ function Policies() {
   const inbox = useInbox();
   const me = lower(session);
   const mine = Object.values(inbox.policies).filter((p) => p.patient === me);
-  const hospitals = Object.entries(inbox.hospitalKeys);
+  const hospitals = approvedList(inbox).map((h) => [h.address, h]);
   const holders = useLoad(async () => Object.fromEntries(await Promise.all(mine.map(async (p) => [String(p.commitment), await session.insureTrust.policyHolder(p.commitment)]))), [session, mine.length]);
   const [pick, setPick] = useState({});
 
@@ -253,12 +284,12 @@ function Policies() {
             return (
               <li key={key} className="stack">
                 <div className="list-row">
-                  <div><b>{p.plan}</b> · limit {rupees(p.policyLimit)} per claim<div className="muted small">{dateOf(p.policyStart)} → {dateOf(p.policyExpiry)} · covers {p.coveredProcedures.map(procedureName).join(", ")}</div></div>
+                  <div><b>{p.plan}</b> · {policyNumber(p)} · limit {rupees(p.policyLimit)} per claim<div className="muted small">{dateOf(p.policyStart)} → {dateOf(p.policyExpiry)} · covers {p.coveredProcedures.map(procedureName).join(", ")}</div></div>
                   <Pill tone={revoked ? "bad" : expired ? "warn" : "ok"}>{revoked ? "Revoked" : expired ? "Expired" : "Active"}</Pill>
                 </div>
                 {sharedWith.length > 0 && <div className="muted small">Shared with: {sharedWith.map((h) => nameOf(h) ?? short(h)).join(", ")}</div>}
                 <div className="actions-inline">
-                  {hospitals.length === 0 ? <span className="muted small">No hospitals registered yet.</span> : (
+                  {hospitals.length === 0 ? <span className="muted small">No approved hospitals yet.</span> : (
                     <>
                       <select value={hospital} onChange={(e) => setPick({ ...pick, [key]: e.target.value })}>{hospitals.map(([a, h]) => <option key={a} value={a}>{h.name}</option>)}</select>
                       <ActionButton small action={async () => {
@@ -295,12 +326,12 @@ function ClaimHistory() {
                   {c.txHash && txUrl(session, c.txHash) && <a href={txUrl(session, c.txHash)} target="_blank" rel="noreferrer">tx ↗</a>}
                 </div>
               </div>
-              {c.status === "paid" && (
+              {c.status === "paid" && session.persona && (
                 <ActionButton small tone="ghost" busyLabel="Submitting again…" action={async () => {
                   const [a, b, cc, pub] = c.calldata;
                   await send(session.insureTrust.submitClaim(a, b, cc, pub));
                   return "Paid again (this should never happen).";
-                }}>Try to submit again (double-payment test)</ActionButton>
+                }}>Verify it can't be paid twice</ActionButton>
               )}
             </li>
           ))}

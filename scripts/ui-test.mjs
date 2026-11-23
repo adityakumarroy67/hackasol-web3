@@ -104,8 +104,6 @@ const t = {
   async account(index, tabLabel) {
     await js(`__t.set(document.querySelector('select[aria-label="Test account"]'), ${index})`);
     await sleep(700);
-    if (tabLabel) await js(`[...document.querySelectorAll("nav.tabs button")].find((b) => b.textContent.includes(${q(tabLabel)})).click()`);
-    await sleep(700);
   },
 };
 
@@ -125,31 +123,31 @@ try {
   await sleep(2500);
   await js(HELPERS);
 
-  await step("welcome screen loads", async () => { await t.waitFor(null, "Get started"); await screenshot("welcome"); });
+  await step("welcome screen loads", async () => { await t.waitFor(null, "Sign in"); await screenshot("welcome"); });
   await step("start as Sanjeevani hospital and create its signing key", async () => {
     await js(`__t.set(document.querySelector('select[aria-label="Start as"]'), ${SANJEEVANI})`);
     await js(`[...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Start").click()`);
-    await t.waitFor("Your hospital", "Create signing key");
-    await t.click("Your hospital", "Create signing key");
+    await t.waitFor("Register your hospital", "Register hospital");
+    await t.click("Register your hospital", "Register hospital");
     await t.waitFor("Your hospital", "Waiting for insurer approval");
   });
   await step("Narmada hospital creates its signing key", async () => {
-    await t.account(NARMADA, "Hospital");
-    await t.click("Your hospital", "Create signing key");
+    await t.account(NARMADA);
+    await t.click("Register your hospital", "Register hospital");
     await t.waitFor("Your hospital", "Waiting for insurer approval");
   });
-  await step("Dr. Rao publishes an encryption key", async () => {
-    await t.account(DR_RAO, "Hospital");
-    await t.click("Doctor: records shared with me", "Publish my encryption key");
-    await t.waitFor("Doctor: records shared with me", "Encryption key published");
+  await step("Dr. Rao registers as a doctor (publishes his encryption key)", async () => {
+    await t.account(DR_RAO);
+    await t.click("Register as a doctor", "Register as doctor");
+    await t.waitFor("Records shared with me", "No records shared");
   });
-  await step("Aarav unlocks his health locker", async () => {
-    await t.account(AARAV, "Patient");
-    await t.click("Your health locker", "Unlock my locker");
-    await t.waitFor("Your health locker", "Unlocked");
+  await step("Aarav creates his health locker", async () => {
+    await t.account(AARAV);
+    await t.click("Create your health locker", "Create my health locker");
+    await t.waitFor("My details", "91-4821-7730-5519");
   });
   await step("insurer approves both hospitals on-chain", async () => {
-    await t.account(INSURER, "Insurer");
+    await t.account(INSURER);
     await t.check("Approved hospitals", "Sanjeevani");
     await t.check("Approved hospitals", "Narmada");
     await t.click("Approved hospitals", "Save approved list on-chain");
@@ -164,15 +162,20 @@ try {
     await screenshot("insurer");
   });
   await step("Aarav shares the policy with Sanjeevani", async () => {
-    await t.account(AARAV, "Patient");
+    await t.account(AARAV);
     await t.click("My insurance", "Share with hospital");
     await t.waitFor("My insurance", "They can now prepare claims");
   });
   await step("Sanjeevani writes an encrypted record for Aarav (stored on IPFS)", async () => {
-    await t.account(SANJEEVANI, "Hospital");
+    await t.account(SANJEEVANI);
     await t.waitFor("Your hospital", "Approved by insurer");
     await t.click("Write a medical record", "Encrypt & add");
     await t.waitFor("Write a medical record", "Record locked and added");
+  });
+  await step("the claim fills in from the hospital's bill", async () => {
+    await js(`(() => { const s = __t.field("Prepare an insurance claim", "Treatment case"); __t.set(s, s.options[1].value); })()`);
+    await t.waitFor("Prepare an insurance claim", "All policy rules pass");
+    if (await js(`__t.field("Prepare an insurance claim", "Amount").value`) !== "42000") throw new Error("amount was not taken from the bill");
   });
   await step("an over-limit claim is explained before proving", async () => {
     await t.fill("Prepare an insurance claim", "Amount", "999999");
@@ -186,40 +189,41 @@ try {
     await screenshot("hospital");
   });
   await step("Aarav approves: contract verifies the proof and pays ₹42,000", async () => {
-    await t.account(AARAV, "Patient");
+    await t.account(AARAV);
     await t.click("Claims waiting for your approval", "Approve & submit claim");
     await t.waitFor("My claim history", "Paid ✓", 60_000);
   });
   await step("paying the same claim twice is refused", async () => {
-    await t.click("My claim history", "Try to submit again");
+    await t.click("My claim history", "Verify it can't be paid twice");
     await t.waitFor("My claim history", "already paid");
   });
   await step("Aarav opens his record and shares it with Dr. Rao for 7 days", async () => {
     await t.click("My medical records", "Open");
-    await t.waitFor("My medical records", "Acute appendicitis");
+    await t.waitFor("My medical records", "Acute appendicitis (ICD-10 K35.8)");
+    await t.waitFor("My medical records", "total ₹42,000");
     await t.click("My medical records", "Share");
     await t.waitFor("My medical records", "can open this record");
     await screenshot("patient");
   });
   await step("Dr. Rao opens the shared record (view is logged on-chain)", async () => {
-    await t.account(DR_RAO, "Hospital");
-    await t.click("Doctor: records shared with me", "Open");
-    await t.waitFor("Doctor: records shared with me", "Acute appendicitis");
-    await t.waitFor("Doctor: records shared with me", "recorded in the patient's access history");
+    await t.account(DR_RAO);
+    await t.click("Records shared with me", "Open");
+    await t.waitFor("Records shared with me", "Acute appendicitis");
+    await t.waitFor("Records shared with me", "recorded in the patient's access history");
   });
   await step("Aarav revokes Dr. Rao; history shows given → opened → removed", async () => {
-    await t.account(AARAV, "Patient");
+    await t.account(AARAV);
     await t.click("My medical records", "Revoke");
     await t.waitFor("My medical records", "no access");
     await js(`__t.card("My medical records").querySelector("details")?.setAttribute("open", "")`);
     await t.waitFor("My medical records", "Access removed for");
   });
   await step("Dr. Rao can no longer open it", async () => {
-    await t.account(DR_RAO, "Hospital");
-    await t.waitFor("Doctor: records shared with me", "Access ended or revoked");
+    await t.account(DR_RAO);
+    await t.waitFor("Records shared with me", "Access ended or revoked");
   });
   await step("insurer dashboard shows the paid claim, verified on-chain", async () => {
-    await t.account(INSURER, "Insurer");
+    await t.account(INSURER);
     await t.waitFor("Paid claims", "verified on-chain");
     await t.waitFor("Paid claims", "₹42,000");
     await screenshot("insurer-dashboard");

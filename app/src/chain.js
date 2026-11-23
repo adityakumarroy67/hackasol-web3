@@ -90,6 +90,8 @@ async function makeSession(provider, signer, chainId) {
     provider,
     signer,
     address: signer ? await signer.getAddress() : null,
+    // A known local demo person (Aarav, Sanjeevani…): forms get fictional sample data to speed up demos.
+    persona: chainId === LOCAL && signer ? TEST_ACCOUNTS.find((a) => testAccountAddress(a.index).toLowerCase() === signer.address.toLowerCase()) ?? null : null,
     deployment,
     isInsurer: Boolean(signer) && (await signer.getAddress()).toLowerCase() === deployment.insurer.toLowerCase(),
     insureTrust: new Contract(deployment.insureTrust, INSURE_TRUST_ABI, runner),

@@ -1,5 +1,5 @@
 // Shared screen pieces: app context, data loading, buttons, cards, formatting.
-import { createContext, useContext, useEffect, useState } from "react";
+import { Fragment, createContext, useContext, useEffect, useState } from "react";
 import { explainError, txUrl } from "./chain.js";
 import { nameOf, useInbox } from "./store.js";
 
@@ -115,3 +115,13 @@ export function PrivacyPanel({ publicItems, privateItems }) {
     </div>
   );
 }
+
+// Form helpers: bind("field") gives an input its value + onChange; seconds -> "YYYY-MM-DD".
+export const binder = (form, setForm) => (key) => ({ value: form[key] ?? "", onChange: (e) => setForm({ ...form, [key]: e.target.value }) });
+export const secondsToInput = (seconds) => new Date(Number(seconds) * 1000).toISOString().slice(0, 10);
+
+// Read-only list of label/value pairs (empty values are skipped).
+export const Summary = ({ rows }) => (
+  <dl className="record">{rows.filter(([, v]) => v).map(([k, v]) => <Fragment key={k}><dt>{k}</dt><dd>{v}</dd></Fragment>)}</dl>
+);
+export const EditButton = ({ onClick }) => <button className="btn ghost small" onClick={onClick}>Edit</button>;

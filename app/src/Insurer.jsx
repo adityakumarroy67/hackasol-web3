@@ -3,10 +3,10 @@ import { useState } from "react";
 import { getAddress } from "ethers";
 import * as C from "../../lib/claim.js";
 import { send, txUrl } from "./chain.js";
-import { PLANS, PROCEDURES, procedureName } from "./catalog.js";
+import { PLANS, PROCEDURES, policyNumber, procedureName } from "./catalog.js";
 import { approvedList, nameOf, rootOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, Empty, ErrorNote, Field, Loading, Pill, PrivacyPanel, Who,
+  ActionButton, Card, Empty, ErrorNote, Field, Loading, Pill, Who,
   dateOf, dateTimeOf, inputToSeconds, nowSeconds, rupees, short, todayInput, useApp, useLoad,
 } from "./ui.jsx";
 
@@ -15,11 +15,7 @@ export default function Insurer() {
   return (
     <div className="grid">
       {!session.isInsurer && (
-        <p className="notice wide">
-          Viewing as {session.signer ? "a non-insurer account" : "a guest"}. Only the insurer's account
-          (<code>{short(session.deployment.insurer)}</code>) can approve hospitals, issue policies and add money.
-          Everyone can check the paid claims below: settlement is public.
-        </p>
+        <p className="notice wide">Public view. Every claim below was verified by a zero-knowledge proof on-chain and paid automatically. No medical data is ever shown.</p>
       )}
       <Overview />
       <ClaimsDashboard />
@@ -27,12 +23,6 @@ export default function Insurer() {
       {session.isInsurer && <IssuePolicy />}
       {session.isInsurer && <Policies />}
       {session.isInsurer && <Pool />}
-      <Card title="What the insurer can and can't see" wide>
-        <PrivacyPanel
-          publicItems={["Claim amount", "Policy fingerprint (a hash: reveals no terms)", "Hospital's payout wallet", "One-time claim code (stops double payment)", "Proof verified: yes / no"]}
-          privateItems={["Diagnosis and procedure", "Treatment date", "Prescriptions and history", "The medical record itself (encrypted off-chain)", "Policy limit, dates and covered list (only inside the proof)"]}
-        />
-      </Card>
     </div>
   );
 }
@@ -76,7 +66,7 @@ function ClaimsDashboard() {
     return rows.reverse();
   }, [session]);
   return (
-    <Card title="Paid claims" subtitle="Every claim here passed the zero-knowledge proof check inside the smart contract and was paid automatically." wide>
+    <Card title="Paid claims" subtitle="Verified by a zero-knowledge proof inside the smart contract and paid automatically. You see the amount, policy fingerprint and payout wallet only: never the diagnosis, procedure or treatment date." wide>
       {data.loading && !data.value ? <Loading /> : data.error ? <ErrorNote>{data.error}</ErrorNote> : data.value.length === 0 ? (
         <Empty>No claims paid yet.</Empty>
       ) : (
@@ -130,12 +120,12 @@ function Hospitals() {
   }
 
   return (
-    <Card title="Approved hospitals" subtitle="Hospitals publish a claim-signing key (Hospital tab). Approving them puts the list's fingerprint on-chain; the proof then shows a claim comes from an approved hospital without saying which one." badge={saved.length > 0 && <Pill tone={inSync ? "ok" : "warn"}>{inSync ? "Saved on-chain ✓" : "Not saved on-chain"}</Pill>}>
-      {known.length === 0 ? <Empty>No hospital has published a signing key yet.</Empty> : (
+    <Card title="Approved hospitals" subtitle="Review registered hospitals and approve the ones you trust. Only a fingerprint of the list goes on-chain." badge={saved.length > 0 && <Pill tone={inSync ? "ok" : "warn"}>{inSync ? "Saved on-chain ✓" : "Not saved on-chain"}</Pill>}>
+      {known.length === 0 ? <Empty>No hospital has registered yet.</Empty> : (
         <ul className="checklist">
           {known.map(([address, key]) => (
             <li key={address}>
-              <label><input type="checkbox" checked={selected.has(address)} onChange={() => toggle(address)} /> <b>{key.name}</b> <code>{short(address)}</code></label>
+              <label><input type="checkbox" checked={selected.has(address)} onChange={() => toggle(address)} /> <b>{key.name}</b> <code>{short(address)}</code>{key.regNo && <span className="muted small"> · Reg. {key.regNo} · {key.city}{key.nabh === "yes" ? " · NABH ✓" : ""}</span>}</label>
             </li>
           ))}
         </ul>
@@ -219,7 +209,7 @@ function Policies() {
             return (
               <li key={String(p.commitment)}>
                 <div>
-                  <b>{nameOf(p.patient) ?? short(p.patient)}</b> · {p.plan} · limit {rupees(p.policyLimit)} · {dateOf(p.policyStart)} → {dateOf(p.policyExpiry)}
+                  <b>{nameOf(p.patient) ?? short(p.patient)}</b> · {policyNumber(p)} · {p.plan} · limit {rupees(p.policyLimit)} · {dateOf(p.policyStart)} → {dateOf(p.policyExpiry)}
                   <div className="muted small">Covers: {p.coveredProcedures.map(procedureName).join(", ")}</div>
                 </div>
                 <div className="actions-inline">
