@@ -5,12 +5,12 @@ import {
   LOCAL, SEPOLIA, TEST_ACCOUNTS, addressUrl, connectGuest, connectMetaMask, connectTestAccount, explainError,
   isDeployed, localChainAvailable, switchMetaMaskTo, testAccountAddress,
 } from "./chain.js";
-import Doctor from "./Doctor.jsx";
-import Hospital from "./Hospital.jsx";
-import Insurer from "./Insurer.jsx";
-import Patient from "./Patient.jsx";
+import Doctor, { useDoctorSections } from "./Doctor.jsx";
+import Hospital, { useHospitalSections } from "./Hospital.jsx";
+import Insurer, { useInsurerSections } from "./Insurer.jsx";
+import Patient, { usePatientSections } from "./Patient.jsx";
 import { nameOf, openInbox, openStorage, resetInbox, updateInbox, useInbox } from "./store.js";
-import { AppContext, ErrorNote, Pill, Receipt, short, useApp } from "./ui.jsx";
+import { AppContext, ErrorNote, Pill, Receipt, Toasts, short, useApp } from "./ui.jsx";
 
 const ROLES = {
   patient: { label: "Patient", icon: User, text: "Keep your medical records private, choose who can read them, and approve insurance claims." },
@@ -28,8 +28,16 @@ export default function App() {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const [refreshKey, refresh] = useReducer((x) => x + 1, 0);
+  const [toasts, setToasts] = useState([]);
+  const dismiss = (id) => setToasts((ts) => ts.filter((t) => t.id !== id));
+  const notify = (toast) => {
+    const id = crypto.randomUUID();
+    setToasts((ts) => [...ts.slice(-2), { ...toast, id }]); // at most three on screen
+    setTimeout(() => dismiss(id), 6000);
+  };
 
   useEffect(() => { openStorage().then(setStorage); }, []);
+  useEffect(() => setToasts([]), [session?.address, session?.chainId]); // a new person starts with no old toasts
 
   async function start(nextMode, connect) {
     setBusy(true);
@@ -87,7 +95,8 @@ export default function App() {
 
   if (!storage) return null;
   return (
-    <AppContext.Provider value={{ session, storage, refresh, refreshKey }}>
+    <AppContext.Provider value={{ session, storage, refresh, refreshKey, notify }}>
+      <Toasts toasts={toasts} dismiss={dismiss} />
       <a className="skip" href="#main">Skip to content</a>
       <header className="topbar">
         <div className="brand"><span className="logo"><ShieldCheck /></span> InsureTrust <small>private health insurance claims</small></div>
@@ -133,7 +142,10 @@ export default function App() {
 function RoleScreen() {
   const { session } = useApp();
   const inbox = useInbox();
-  if (!session.signer || session.isInsurer) return <><PageTitle role={session.signer ? "insurer" : "guest"} /><Insurer /></>;
+  if (!session.signer || session.isInsurer) {
+    const role = session.signer ? "insurer" : "guest";
+    return <Shell key={role} role={role} Screen={Insurer} useSections={useInsurerSections} />;
+  }
   const me = session.address.toLowerCase();
   const role = inbox.people[me]?.role;
   if (!role || role === "insurer") {
@@ -153,8 +165,38 @@ function RoleScreen() {
       </section>
     );
   }
-  const Screen = { patient: Patient, hospital: Hospital, doctor: Doctor }[role];
-  return <><PageTitle role={role} /><Screen /></>;
+  const [Screen, useSections] = { patient: [Patient, usePatientSections], hospital: [Hospital, useHospitalSections], doctor: [Doctor, useDoctorSections] }[role];
+  return <Shell key={role} role={role} Screen={Screen} useSections={useSections} />;
+}
+
+// A role's dashboard: a sidebar of its sections (tabs on phones) and the chosen section.
+// useSections() gives [{ id, label, icon, count }] and the section to open first.
+function Shell({ role, Screen, useSections }) {
+  const { sections, initial } = useSections();
+  // The opening section is chosen once (it must not jump when, say, the last waiting claim is paid),
+  // and again when registration finishes and the sidebar first appears.
+  const multi = sections.length > 1;
+  const [view, setView] = useState({ multi, id: initial });
+  if (view.multi !== multi) setView({ multi, id: initial });
+  const current = sections.some((s) => s.id === view.id) ? view.id : initial;
+  const setPicked = (id) => setView({ multi, id });
+  if (sections.length <= 1) return <><PageTitle role={role} /><Screen section={current} /></>; // e.g. before registering
+  return (
+    <div className="shell">
+      <nav className="sidenav" aria-label={`${ROLES[role].label} sections`}>
+        <span className="sidenav-label">{ROLES[role].label}</span>
+        {sections.map(({ id, label, icon: Icon, count }) => (
+          <button key={id} aria-current={id === current ? "page" : undefined} onClick={() => { setPicked(id); scrollTo({ top: 0 }); }}>
+            <Icon /><span>{label}</span>{count > 0 && <span className="count" aria-label={`${count} need attention`}>{count}</span>}
+          </button>
+        ))}
+      </nav>
+      <div className="shell-body">
+        <PageTitle role={role} />
+        <div key={current} className="section-body"><Screen section={current} /></div>
+      </div>
+    </div>
+  );
 }
 
 function PageTitle({ role }) {

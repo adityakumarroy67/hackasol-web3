@@ -1,28 +1,42 @@
 // Insurer screen: overview, public claims dashboard, hospital approval, policies, money pool.
 import { useState } from "react";
 import { getAddress } from "ethers";
+import { Building2, FileText, LayoutDashboard, ReceiptText, ShieldCheck, Wallet } from "lucide-react";
 import * as C from "../../lib/claim.js";
 import { eventsOf, send, txUrl } from "./chain.js";
 import { PLANS, PROCEDURES, policyNumber, procedureName } from "./catalog.js";
 import { approvedList, nameOf, rootOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, Empty, ErrorNote, Field, Loading, Pill, Receipt, Seal, Who,
+  ActionButton, Card, Empty, ErrorNote, Field, Kpi, Loading, Pill, Receipt, Seal, Who,
   dateOf, dateTimeOf, inputToSeconds, nowSeconds, rupees, short, todayInput, useApp, useLoad,
 } from "./ui.jsx";
 
-export default function Insurer() {
+// Sidebar sections. Guests see only the public ones. Hospitals waiting for review are counted.
+export function useInsurerSections() {
+  const { session } = useApp();
+  const inbox = useInbox();
+  const waiting = Object.keys(inbox.hospitalKeys).filter((a) => !inbox.approvedHospitals.includes(a)).length;
+  const sections = [{ id: "overview", label: "Overview", icon: LayoutDashboard }, { id: "claims", label: "Paid claims", icon: ReceiptText }];
+  if (session.isInsurer) sections.push(
+    { id: "hospitals", label: "Hospitals", icon: Building2, count: waiting },
+    { id: "policies", label: "Policies", icon: FileText },
+    { id: "pool", label: "Money pool", icon: Wallet },
+  );
+  return { sections, initial: "overview" };
+}
+
+export default function Insurer({ section }) {
   const { session } = useApp();
   return (
     <div className="grid">
-      {!session.isInsurer && (
-        <p className="notice wide">Public view. Every claim below was verified by a zero-knowledge proof on-chain and paid automatically. No medical data is ever shown.</p>
+      {!session.isInsurer && section === "overview" && (
+        <p className="notice wide">Public view. Every claim here was verified by a zero-knowledge proof on-chain and paid automatically. No medical data is ever shown.</p>
       )}
-      <Overview />
-      <ClaimsDashboard />
-      {session.isInsurer && <Hospitals />}
-      {session.isInsurer && <IssuePolicy />}
-      {session.isInsurer && <Policies />}
-      {session.isInsurer && <Pool />}
+      {section === "overview" && <Overview />}
+      {section === "claims" && <ClaimsDashboard />}
+      {section === "hospitals" && <Hospitals />}
+      {section === "policies" && <><IssuePolicy /><Policies /></>}
+      {section === "pool" && <Pool />}
     </div>
   );
 }
@@ -48,56 +62,60 @@ function Overview() {
   const list = approvedList(inbox);
   const listOnChain = list.length > 0 && rootOf(list) === v.root;
   return (
-    <Card title="Overview" subtitle="Live from the blockchain" wide>
-      <div className={v.latest ? "overview" : undefined}>
-      <div className="stats">
-        <div className="stat"><span>Money pool</span><b>{rupees(v.pool)}</b><small>test tINR (no real value)</small></div>
-        <div className="stat"><span>Claims paid</span><b>{v.paidCount}</b><small>{rupees(v.paidTotal)} in total</small></div>
-        <div className="stat"><span>Policies issued</span><b>{v.policies}</b><small>only fingerprints on-chain</small></div>
+    <>
+      <div className="kpis wide">
+        <Kpi icon={Wallet} label="Money pool" value={rupees(v.pool)} note="test tINR (no real value)" />
+        <Kpi icon={ReceiptText} label="Claims paid" value={v.paidCount} note={`${rupees(v.paidTotal)} in total`} />
+        <Kpi icon={FileText} label="Policies issued" value={v.policies} note="only fingerprints on-chain" />
         {list.length === 0 && v.root ? (
           // This browser doesn't hold the list (e.g. a guest), but the blockchain has its fingerprint.
-          <div className="stat"><span>Approved hospitals</span><b>On-chain</b><small><Seal>list fingerprint {short(v.root)}</Seal></small></div>
+          <Kpi icon={Building2} label="Approved hospitals" value="On-chain" note={<Seal>list fingerprint {short(v.root)}</Seal>} />
         ) : (
-          <div className="stat"><span>Approved hospitals</span><b>{list.length}</b><small>{list.length === 0 ? "none yet" : listOnChain ? <Seal>list saved on-chain</Seal> : "list not saved on-chain"}</small></div>
+          <Kpi icon={Building2} label="Approved hospitals" value={list.length}
+            note={list.length === 0 ? "none yet" : listOnChain ? <Seal>list saved on-chain</Seal> : "list not saved on-chain"} />
         )}
       </div>
-      {v.latest && (
-        <Receipt no={`Claim no. ${String(v.latest.e.args.claimIndex).padStart(4, "0")}`} paidOn={dateTimeOf(v.latest.claim.settledAt)}
-          policy={<code>{short(v.latest.claim.policyCommitment)}</code>} paidTo={<Who address={v.latest.claim.hospitalPayout} />}
-          amount={rupees(v.latest.claim.amount)}
-          tx={txUrl(session, v.latest.e.transactionHash) && <a href={txUrl(session, v.latest.e.transactionHash)} target="_blank" rel="noreferrer">View transaction ↗</a>} />
-      )}
+      <div className={`wide ${v.latest ? "overview-split" : ""}`}>
+        <ClaimsDashboard limit={5} />
+        {v.latest && (
+          <Receipt no={`Claim no. ${String(v.latest.e.args.claimIndex).padStart(4, "0")}`} paidOn={dateTimeOf(v.latest.claim.settledAt)}
+            policy={<code>{short(v.latest.claim.policyCommitment)}</code>} paidTo={<Who address={v.latest.claim.hospitalPayout} />}
+            amount={rupees(v.latest.claim.amount)}
+            tx={txUrl(session, v.latest.e.transactionHash) && <a href={txUrl(session, v.latest.e.transactionHash)} target="_blank" rel="noreferrer">View transaction ↗</a>} />
+        )}
       </div>
-    </Card>
+    </>
   );
 }
 
-function ClaimsDashboard() {
+// limit: show only the newest few (the overview's "Recent claims").
+function ClaimsDashboard({ limit }) {
   const { session } = useApp();
   const data = useLoad(async () => {
     const it = session.insureTrust;
     const events = await eventsOf(session, it, it.filters.ClaimSettled());
-    const rows = await Promise.all(events.map(async (e) => ({ e, claim: await it.claims(e.args.claimIndex) })));
-    return rows.reverse();
+    const newest = events.reverse().slice(0, limit ?? events.length);
+    return Promise.all(newest.map(async (e) => ({ e, claim: await it.claims(e.args.claimIndex) })));
   }, [session]);
   return (
-    <Card title="Paid claims" subtitle="Verified by a zero-knowledge proof inside the smart contract and paid automatically. You see the amount, policy fingerprint and payout wallet only: never the diagnosis, procedure or treatment date." wide>
+    <Card title={limit ? "Recent claims" : "Paid claims"} wide={!limit}
+      subtitle={limit ? "The newest settlements, each verified by a zero-knowledge proof on-chain" : "Verified by a zero-knowledge proof inside the smart contract and paid automatically. You see the amount, policy fingerprint and payout wallet only: never the diagnosis, procedure or treatment date."}>
       {data.loading && !data.value ? <Loading /> : data.error ? <ErrorNote>{data.error}</ErrorNote> : data.value.length === 0 ? (
-        <Empty>No claims paid yet.</Empty>
+        <Empty><ShieldCheck /> No claims paid yet. They appear here the moment the contract verifies a proof.</Empty>
       ) : (
         <div className="table-wrap">
-          <table>
-            <thead><tr><th>#</th><th>Paid on</th><th>Policy fingerprint</th><th>Paid to hospital</th><th className="num">Amount</th><th>Proof</th><th></th></tr></thead>
+          <table className={limit ? "compact" : undefined}>
+            <thead><tr>{!limit && <th>#</th>}<th>Paid on</th>{!limit && <th>Policy fingerprint</th>}<th>Paid to hospital</th><th className="num">Amount</th>{!limit && <><th>Proof</th><th></th></>}</tr></thead>
             <tbody>
               {data.value.map(({ e, claim }) => (
                 <tr key={e.transactionHash}>
-                  <td>{String(e.args.claimIndex)}</td>
+                  {!limit && <td>{String(e.args.claimIndex)}</td>}
                   <td>{dateTimeOf(claim.settledAt)}</td>
-                  <td><code>{short(claim.policyCommitment)}</code></td>
+                  {!limit && <td><code>{short(claim.policyCommitment)}</code></td>}
                   <td><Who address={claim.hospitalPayout} /></td>
                   <td className="num"><b>{rupees(claim.amount)}</b></td>
-                  <td><Seal>verified on-chain</Seal></td>
-                  <td>{txUrl(session, e.transactionHash) ? <a href={txUrl(session, e.transactionHash)} target="_blank" rel="noreferrer">tx ↗</a> : <code>{short(e.transactionHash)}</code>}</td>
+                  {!limit && <td><Seal>verified on-chain</Seal></td>}
+                  {!limit && <td>{txUrl(session, e.transactionHash) ? <a href={txUrl(session, e.transactionHash)} target="_blank" rel="noreferrer">tx ↗</a> : <code>{short(e.transactionHash)}</code>}</td>}
                 </tr>
               ))}
             </tbody>

@@ -86,14 +86,33 @@ main { max-width: 1280px; margin: 0 auto; padding: 24px clamp(16px, 4vw, 32px) 4
 .notice { background: var(--raised); color: var(--text-2); border-radius: 10px; padding: 12px 16px; margin: 0; font-size: 14px; }
 .empty { color: var(--muted); margin: 4px 0; }
 
-/* ---------- stats ---------- */
-.overview { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 32px; align-items: center; }
-@media (max-width: 960px) { .overview { grid-template-columns: minmax(0, 1fr); } }
-.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 24px 32px; }
-.stat { display: flex; flex-direction: column; gap: 4px; }
-.stat span { color: var(--text-2); font-size: 13px; line-height: 20px; }
-.stat b { font-size: 28px; line-height: 32px; font-weight: 500; font-variant-numeric: tabular-nums; }
-.stat small { color: var(--muted); font-size: 13px; line-height: 20px; }
+/* ---------- dashboard shell: sidebar of sections, tabs on phones ---------- */
+.shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); gap: 32px; align-items: start; }
+.sidenav { position: sticky; top: 80px; display: flex; flex-direction: column; gap: 2px; }
+.sidenav-label { font-size: 12px; line-height: 16px; color: var(--muted); padding: 4px 12px 8px; }
+.sidenav button { font: inherit; font-size: 14px; line-height: 20px; display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 12px; border: 0; border-radius: 8px; background: none; color: var(--text-2); cursor: pointer; text-align: left; transition: background-color 150ms var(--ease), color 150ms var(--ease); }
+.sidenav button:hover { background: var(--raised); color: var(--text); }
+.sidenav button[aria-current="page"] { background: var(--raised); color: var(--text); font-weight: 500; }
+.sidenav button[aria-current="page"] .lucide { color: var(--accent); }
+.sidenav .count { margin-left: auto; min-width: 20px; padding: 0 6px; border-radius: 6px; text-align: center; font: 500 12px/18px var(--mono); color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.shell-body { min-width: 0; }
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .sidenav { position: static; flex-direction: row; overflow-x: auto; gap: 4px; margin: 0 -4px; padding: 0 4px 4px; border-bottom: 1px solid var(--line); }
+  .sidenav-label { display: none; }
+  .sidenav button { width: auto; flex: none; white-space: nowrap; }
+}
+
+/* ---------- overview: headline numbers, then recent claims beside the latest receipt ---------- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; }
+.kpi { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 20px; display: flex; flex-direction: column; gap: 4px; box-shadow: var(--shadow); min-width: 0; }
+.kpi-label { display: flex; gap: 8px; align-items: center; color: var(--text-2); font-size: 13px; line-height: 20px; }
+.kpi-label .lucide { color: var(--muted); }
+.kpi b { font-size: 26px; line-height: 32px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.kpi small { color: var(--muted); font-size: 13px; line-height: 20px; }
+.kpi .seal { white-space: normal; overflow-wrap: anywhere; }
+.overview-split { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 16px; align-items: start; }
+@media (max-width: 1100px) { .overview-split { grid-template-columns: minmax(0, 1fr); } .overview-split .receipt { max-width: 420px; } }
 
 /* ---------- forms ---------- */
 .form { display: flex; flex-direction: column; gap: 16px; }
@@ -162,6 +181,7 @@ th { color: var(--text-2); font-weight: 500; font-size: 13px; padding-top: 0; }
 tbody tr { transition: background-color 150ms var(--ease); }
 tbody tr:hover { background: var(--raised); }
 .num { text-align: right; }
+table.compact .who code { display: none; } /* the overview's short table: hospital name only */
 
 /* ---------- record, privacy, problems ---------- */
 .record { display: grid; grid-template-columns: max-content 1fr; gap: 8px 16px; margin: 0; padding: 12px 16px; background: var(--raised); border-radius: 6px; font-size: 14px; }
@@ -255,10 +275,6 @@ footer { max-width: 1280px; margin: 0 auto; padding: 0 clamp(16px, 4vw, 32px) 32
 .proof-time { font: 400 12px/16px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
 
 /* ---------- layout fixes from the screen review ---------- */
-.overview { align-items: start; }
-.overview .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.stat .seal { white-space: normal; overflow-wrap: anywhere; align-items: flex-start; }
-.stat .seal .lucide { margin-top: 0; }
 .two-col .privacy { grid-template-columns: minmax(0, 1fr); }
 .checklist label .muted { flex-basis: 100%; padding-left: 24px; }
 .stack > .receipt { max-width: 420px; }
@@ -273,7 +289,60 @@ a:hover { color: var(--accent-hover); }
 .skip:focus { top: 8px; }
 @media (max-width: 600px) {
   .btn, .btn.small, input, select, .chip { min-height: 44px; }
+  /* phone top bar: brand on one line, then network, person picker and sign-out on one line */
+  .topbar .status { width: 100%; flex-wrap: nowrap; }
+  .topbar .status select { flex: 1; min-width: 0; max-width: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0ms !important; }
+}
+
+/* ---------- loading: placeholder lines instead of a spinner ---------- */
+.skeleton { display: flex; flex-direction: column; gap: 10px; padding: 4px 0; }
+.skeleton span { height: 12px; border-radius: 6px; background: var(--raised); }
+.skeleton span:nth-child(1) { width: 60%; }
+.skeleton span:nth-child(2) { width: 85%; }
+.skeleton span:nth-child(3) { width: 40%; }
+@media (prefers-reduced-motion: no-preference) {
+  .skeleton span { background: linear-gradient(90deg, var(--raised) 0%, var(--line-strong) 50%, var(--raised) 100%); background-size: 200% 100%; animation: shimmer 1.4s linear infinite; }
+  @keyframes shimmer { to { background-position: -200% 0; } }
+  /* switching sections: the new section settles in */
+  .section-body { animation: rise 280ms var(--ease) both; }
+}
+.empty { display: flex; gap: 8px; align-items: flex-start; }
+.empty .lucide { margin-top: 3px; color: var(--muted); }
+
+/* ---------- a claim's journey: proof → patient approval → verified & paid ---------- */
+.claim-steps { list-style: none; margin: 0; padding: 0; display: flex; max-width: 460px; font-size: 12px; line-height: 16px; color: var(--muted); }
+.claim-steps li { flex: 1; position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.claim-steps li:not(:last-child)::after { content: ""; position: absolute; top: 9px; left: 26px; right: 8px; height: 1px; background: var(--line-strong); }
+.claim-steps li.done:not(:last-child)::after { background: color-mix(in srgb, var(--ok) 55%, transparent); }
+.claim-steps .dot { width: 18px; height: 18px; border-radius: 50%; border: 1.5px solid var(--line-strong); background: var(--card); display: grid; place-items: center; }
+.claim-steps .dot .lucide { width: 12px; height: 12px; stroke-width: 2.5; }
+.claim-steps li.done { color: var(--text-2); }
+.claim-steps li.done .dot { border-color: var(--ok); background: var(--ok); color: var(--card); }
+.claim-steps li.current { color: var(--text); }
+.claim-steps li.current .dot { border-color: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 18%, transparent); }
+.claim-steps li.failed { color: var(--bad); }
+.claim-steps li.failed .dot { border-color: var(--bad); background: var(--bad); color: var(--card); }
+
+/* ---------- long forms in titled sections; the bill adds itself up ---------- */
+.form-section { display: flex; flex-direction: column; gap: 16px; padding-top: 20px; border-top: 1px solid var(--line); min-width: 0; }
+.form-section:first-child { padding-top: 0; border-top: 0; }
+.form-section h4 { color: var(--text); }
+.bill-summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 24px; margin: 0; padding: 12px 16px; max-width: 420px; background: var(--raised); border-radius: 8px; font-size: 14px; line-height: 20px; color: var(--text-2); }
+.bill-summary dd { margin: 0; text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.bill-summary .total { padding-top: 8px; border-top: 1px dashed var(--line-strong); color: var(--text); font-weight: 500; }
+
+/* ---------- transaction toasts ---------- */
+.toasts { position: fixed; z-index: 30; right: max(16px, env(safe-area-inset-right, 0px)); bottom: max(16px, env(safe-area-inset-bottom, 0px)); width: min(380px, calc(100vw - 32px)); display: flex; flex-direction: column; gap: 8px; }
+.toast { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 10px; align-items: start; padding: 12px 14px; background: var(--card); border: 1px solid var(--line-strong); border-radius: 10px; box-shadow: 0 8px 28px rgb(0 0 0 / 0.14); font-size: 14px; line-height: 20px; }
+.toast > .lucide { color: var(--ok); margin-top: 2px; }
+.toast p { margin: 0; }
+.toast small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; color: var(--text-2); font-size: 13px; line-height: 18px; margin-top: 2px; }
+.toast button { background: none; border: 0; padding: 2px; color: var(--muted); cursor: pointer; border-radius: 4px; }
+.toast button:hover { color: var(--text); }
+@media (prefers-reduced-motion: no-preference) {
+  .toast { animation: toast-in 240ms var(--ease) both; }
+  @keyframes toast-in { from { opacity: 0; transform: translateY(8px) scale(0.98); } }
 }

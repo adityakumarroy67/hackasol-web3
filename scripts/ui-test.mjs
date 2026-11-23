@@ -81,6 +81,11 @@ const HELPERS = `window.__t = {
     const box = label.querySelector("input[type=checkbox]");
     if (!box.checked) box.click();
   },
+  nav(label) {
+    const b = [...document.querySelectorAll(".sidenav button")].find((b) => b.textContent.trim().startsWith(label));
+    if (!b) throw new Error("section not found: " + label);
+    b.click();
+  },
   text(title) { return title ? this.card(title).innerText : document.body.innerText; },
   errors(title) { return [...(title ? this.card(title) : document).querySelectorAll(".err")].map((e) => e.innerText); },
 };`;
@@ -89,6 +94,12 @@ const t = {
   fill: (card, label, value) => js(`__t.set(__t.field(${q(card)}, ${q(label)}), ${q(value)})`),
   click: (card, text, nth = 0) => js(`__t.click(${q(card)}, ${q(text)}, ${nth})`),
   check: (card, text) => js(`__t.check(${q(card)}, ${q(text)})`),
+  async nav(label) { // waits until the section exists (e.g. right after registering), then opens it
+    for (let i = 0; i < 40; i++) {
+      try { await js(`__t.nav(${q(label)})`); await sleep(300); return; } catch { await sleep(300); }
+    }
+    await js(`__t.nav(${q(label)})`);
+  },
   text: (card) => js(`__t.text(${q(card)})`),
   async waitFor(card, needle, timeout = 30_000) {
     const end = Date.now() + timeout;
@@ -144,10 +155,13 @@ try {
   await step("Aarav creates his health locker", async () => {
     await t.account(AARAV);
     await t.click("Create your health locker", "Create my health locker");
+    await t.nav("My details");
     await t.waitFor("My details", "91-4821-7730-5519");
   });
   await step("insurer approves both hospitals on-chain", async () => {
     await t.account(INSURER);
+    await t.waitFor(null, "Money pool");
+    await t.nav("Hospitals");
     await t.check("Approved hospitals", "Sanjeevani");
     await t.check("Approved hospitals", "Narmada");
     await t.click("Approved hospitals", "Save approved list on-chain");
@@ -155,6 +169,7 @@ try {
   });
   let aaravAddress;
   await step("insurer issues a Gold policy to Aarav", async () => {
+    await t.nav("Policies");
     aaravAddress = await js(`Object.entries(JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => k.startsWith("insuretrust:")))).people).find(([, p]) => p.name === "Aarav")[0]`);
     await t.fill("Issue a policy", "Patient", aaravAddress);
     await t.click("Issue a policy", "Issue policy");
@@ -163,16 +178,19 @@ try {
   });
   await step("Aarav shares the policy with Sanjeevani", async () => {
     await t.account(AARAV);
+    await t.nav("Insurance");
     await t.click("My insurance", "Share with hospital");
     await t.waitFor("My insurance", "They can now prepare claims");
   });
   await step("Sanjeevani writes an encrypted record for Aarav (stored on IPFS)", async () => {
     await t.account(SANJEEVANI);
     await t.waitFor("Your hospital", "approved by insurer");
+    await t.nav("Records");
     await t.click("Write a medical record", "Encrypt & add");
     await t.waitFor("Write a medical record", "Record locked and added");
   });
   await step("the claim fills in from the hospital's bill", async () => {
+    await t.nav("Claims");
     await js(`(() => { const s = __t.field("Prepare an insurance claim", "Treatment case"); __t.set(s, s.options[1].value); })()`);
     await t.waitFor("Prepare an insurance claim", "All policy rules pass");
     if (await js(`__t.field("Prepare an insurance claim", "Amount").value`) !== "42000") throw new Error("amount was not taken from the bill");
@@ -199,6 +217,8 @@ try {
   });
   await step("the hospital can't bill the same case twice (same bill, same one-time code)", async () => {
     await t.account(SANJEEVANI);
+    await t.waitFor("Your hospital", "approved by insurer");
+    await t.nav("Claims");
     await js(`(() => { const s = __t.field("Prepare an insurance claim", "Treatment case"); __t.set(s, s.options[1].value); })()`);
     await t.waitFor("Prepare an insurance claim", "All policy rules pass");
     await t.click("Prepare an insurance claim", "Create proof");
@@ -232,6 +252,8 @@ try {
   });
   await step("insurer dashboard shows the paid claim, verified on-chain", async () => {
     await t.account(INSURER);
+    await t.waitFor("Recent claims", "₹42,000"); // the overview shows it too
+    await t.nav("Paid claims");
     await t.waitFor("Paid claims", "verified on-chain");
     await t.waitFor("Paid claims", "₹42,000");
     await screenshot("insurer-dashboard");

@@ -1,6 +1,6 @@
 // Hospital screen: registration, encrypted medical records, insurance claims from the bill.
-import { useState } from "react";
-import { AlertCircle, Check } from "lucide-react";
+import { Fragment, useState } from "react";
+import { AlertCircle, Check, FilePlus2, LayoutDashboard, ReceiptText } from "lucide-react";
 import * as C from "../../lib/claim.js";
 import * as R from "../../lib/records.js";
 import { send } from "./chain.js";
@@ -8,13 +8,25 @@ import { DIAGNOSES, PROCEDURES, policyNumber, procedureName } from "./catalog.js
 import { encryptionKeyOf, hospitalKeyFor } from "./keys.js";
 import { approvedList, nameOf, rootOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, EditButton, Field, Pill, PrivacyPanel, Seal, Summary, binder,
+  ActionButton, Card, ClaimSteps, EditButton, Empty, Field, Pill, PrivacyPanel, Seal, Summary, binder,
   dateOf, inputToSeconds, nowSeconds, rupees, secondsToInput, short, todayInput, useApp, useLoad,
 } from "./ui.jsx";
 
 const myAddress = (session) => session.address.toLowerCase();
 
-export default function Hospital() {
+// Sidebar sections; before registering there is only the registration form.
+export function useHospitalSections() {
+  const { session } = useApp();
+  const inbox = useInbox();
+  const overview = { id: "overview", label: "Overview", icon: LayoutDashboard };
+  if (!inbox.hospitalKeys[myAddress(session)]) return { sections: [overview], initial: "overview" };
+  return {
+    sections: [overview, { id: "records", label: "Records", icon: FilePlus2 }, { id: "claims", label: "Claims", icon: ReceiptText }],
+    initial: "overview",
+  };
+}
+
+export default function Hospital({ section }) {
   const { session } = useApp();
   const inbox = useInbox();
   const me = myAddress(session);
@@ -25,21 +37,23 @@ export default function Hospital() {
   const hasPatients = Object.values(inbox.people).some((p) => p.role === "patient" && p.profile);
   const hasPolicies = Object.values(inbox.policyShares).some((hs) => hs.includes(me));
   const hasClaims = Object.values(inbox.claims).some((c) => c.hospital === me);
+  const gettingStarted = (
+    <Card title="Getting started">
+      <ol className="checklist-steps">
+        <li className={approved ? "done" : ""}>The insurer approves your hospital</li>
+        <li className={hasPatients ? "done" : ""}>A patient creates their health locker</li>
+        <li className={hasPolicies ? "done" : ""}>The patient shares their insurance policy with you</li>
+        <li>You write their medical record, then send the claim</li>
+      </ol>
+    </Card>
+  );
   return (
     <div className="grid">
-      <Identity approved={approved} />
-      {hasClaims ? <MyClaims /> : (
-        <Card title="Getting started">
-          <ol className="checklist-steps">
-            <li className={approved ? "done" : ""}>The insurer approves your hospital</li>
-            <li className={hasPatients ? "done" : ""}>A patient creates their health locker</li>
-            <li className={hasPolicies ? "done" : ""}>The patient shares their insurance policy with you</li>
-            <li>You write their medical record, then send the claim</li>
-          </ol>
-        </Card>
-      )}
-      {hasPatients && <WriteRecord />}
-      {approved && hasPolicies && <PrepareClaim />}
+      {section === "overview" && <><Identity approved={approved} />{hasClaims ? <MyClaims /> : gettingStarted}</>}
+      {section === "records" && (hasPatients ? <WriteRecord /> : (
+        <Card title="Write a medical record" wide><Empty>No patients yet. Patients appear here once they create their health locker.</Empty></Card>
+      ))}
+      {section === "claims" && <>{approved && hasPolicies ? <PrepareClaim /> : gettingStarted}{hasClaims && <MyClaims wide />}</>}
     </div>
   );
 }
@@ -174,27 +188,39 @@ function WriteRecord() {
   return (
     <Card title="Write a medical record" subtitle="Discharge summary and bill. Encrypted in this browser so only the patient can open it." wide>
       <div className="form">
-        <Field label="Patient" hint={profile && `ABHA ${profile.abha || "—"} · born ${profile.birthDate || "—"} · ${profile.gender || ""} · blood group ${profile.bloodGroup || "—"}`}>
-          <select {...bind("patient")}>{patients.map(([a, p]) => <option key={a} value={a}>{p.name} ({short(a)})</option>)}</select>
-        </Field>
-        <div className="row">
-          <Field label="Admitted"><input type="date" {...bind("admitted")} /></Field>
-          <Field label="Discharged" hint="Used as the treatment date for the claim"><input type="date" {...bind("discharged")} /></Field>
-        </div>
-        <div className="row">
-          <Field label="Diagnosis (ICD-10)"><select value={form.diagnosis} onChange={chooseDiagnosis}>{DIAGNOSES.map((d) => <option key={d.icd} value={d.icd}>{d.name} ({d.icd})</option>)}</select></Field>
-          <Field label="Procedure"><select {...bind("procedure")}>{PROCEDURES.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}</select></Field>
-        </div>
-        <div className="row">
-          <Field label="Treating doctor"><input {...bind("doctor")} placeholder="Dr. …" /></Field>
-          <Field label="Doctor's registration no."><input {...bind("doctorReg")} /></Field>
-        </div>
-        <Field label="Prescriptions" hint="One per line: medicine and strength, dosage, duration"><textarea rows="3" {...bind("medications")} placeholder="Amoxicillin 500 mg, 1-0-1, 5 days" /></Field>
-        <Field label="Clinical notes"><textarea rows="2" {...bind("notes")} /></Field>
-        <div className="row">
-          {BILL_ITEMS.map(([k, item]) => <Field key={k} label={`${item} (₹)`}><input type="number" min="0" {...bind(k)} placeholder="0" /></Field>)}
-        </div>
-        <p><b>Bill total: {rupees(total * 100)}</b></p>
+        <section className="form-section">
+          <h4>Patient and stay</h4>
+          <Field label="Patient" hint={profile && `ABHA ${profile.abha || "—"} · born ${profile.birthDate || "—"} · ${profile.gender || ""} · blood group ${profile.bloodGroup || "—"}`}>
+            <select {...bind("patient")}>{patients.map(([a, p]) => <option key={a} value={a}>{p.name} ({short(a)})</option>)}</select>
+          </Field>
+          <div className="row">
+            <Field label="Admitted"><input type="date" {...bind("admitted")} /></Field>
+            <Field label="Discharged" hint="Used as the treatment date for the claim"><input type="date" {...bind("discharged")} /></Field>
+          </div>
+        </section>
+        <section className="form-section">
+          <h4>Diagnosis and treatment</h4>
+          <div className="row">
+            <Field label="Diagnosis (ICD-10)"><select value={form.diagnosis} onChange={chooseDiagnosis}>{DIAGNOSES.map((d) => <option key={d.icd} value={d.icd}>{d.name} ({d.icd})</option>)}</select></Field>
+            <Field label="Procedure"><select {...bind("procedure")}>{PROCEDURES.map((p) => <option key={p.code} value={p.code}>{p.name}</option>)}</select></Field>
+          </div>
+          <div className="row">
+            <Field label="Treating doctor"><input {...bind("doctor")} placeholder="Dr. …" /></Field>
+            <Field label="Doctor's registration no."><input {...bind("doctorReg")} /></Field>
+          </div>
+          <Field label="Prescriptions" hint="One per line: medicine and strength, dosage, duration"><textarea rows="3" {...bind("medications")} placeholder="Amoxicillin 500 mg, 1-0-1, 5 days" /></Field>
+          <Field label="Clinical notes"><textarea rows="2" {...bind("notes")} /></Field>
+        </section>
+        <section className="form-section">
+          <h4>Bill</h4>
+          <div className="row">
+            {BILL_ITEMS.map(([k, item]) => <Field key={k} label={`${item} (₹)`}><input type="number" min="0" step="0.01" {...bind(k)} placeholder="0" /></Field>)}
+          </div>
+          <dl className="bill-summary">
+            {BILL_ITEMS.map(([k, item]) => Number(form[k]) > 0 && <Fragment key={k}><dt>{item}</dt><dd>{rupees(Math.round(Number(form[k]) * 100))}</dd></Fragment>)}
+            <dt className="total">Bill total</dt><dd className="total">{rupees(Math.round(total * 100))}</dd>
+          </dl>
+        </section>
         <ActionButton action={write} busyLabel="Encrypting and saving…">Encrypt & add to patient's locker</ActionButton>
       </div>
     </Card>
@@ -314,17 +340,20 @@ function PrepareClaim() {
 const STATUS = { "awaiting-patient": ["warn", "Waiting for patient"], paid: ["ok", "Paid"], rejected: ["bad", "Rejected"], declined: ["bad", "Declined by patient"] };
 export const ClaimStatus = ({ status }) => <Pill tone={STATUS[status]?.[0] ?? "info"}>{STATUS[status]?.[1] ?? status}</Pill>;
 
-function MyClaims() {
+function MyClaims({ wide }) {
   const { session } = useApp();
   const inbox = useInbox();
   const mine = Object.values(inbox.claims).filter((c) => c.hospital === myAddress(session)).sort((a, b) => Number(b.createdAt - a.createdAt));
   return (
-    <Card title="Claims you sent">
+    <Card title="Claims you sent" wide={wide}>
       <ul className="list">
         {mine.map((c) => (
-          <li key={c.id}>
-            <div><b>{nameOf(c.patient) ?? short(c.patient)}</b> · {procedureName(c.procedureCode)} · {rupees(c.amount)}<div className="muted small">{c.billNo ? `Bill ${c.billNo} · ` : ""}Proof made in {(c.proofMs / 1000).toFixed(1)} s{c.reason ? ` · ${c.reason}` : ""}</div></div>
-            <ClaimStatus status={c.status} />
+          <li key={c.id} className="stack">
+            <div className="list-row">
+              <div><b>{nameOf(c.patient) ?? short(c.patient)}</b> · {procedureName(c.procedureCode)} · {rupees(c.amount)}<div className="muted small">{c.billNo ? `Bill ${c.billNo} · ` : ""}Proof made in {(c.proofMs / 1000).toFixed(1)} s{c.reason ? ` · ${c.reason}` : ""}</div></div>
+              <ClaimStatus status={c.status} />
+            </div>
+            <ClaimSteps status={c.status} />
           </li>
         ))}
       </ul>

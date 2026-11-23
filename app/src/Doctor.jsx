@@ -1,5 +1,6 @@
 // Doctor screen: one-step registration (details + encryption key), then records patients shared.
 import { useState } from "react";
+import { FolderLock, UserRound } from "lucide-react";
 import * as R from "../../lib/records.js";
 import { eventsOf, send } from "./chain.js";
 import { encryptionKeyOf, publishEncryptionKey, recordKeysFor } from "./keys.js";
@@ -7,7 +8,16 @@ import RecordView from "./RecordView.jsx";
 import { updateInbox, useInbox } from "./store.js";
 import { ActionButton, Card, EditButton, Empty, ErrorNote, Field, Loading, Pill, Summary, Who, binder, dateOf, useApp, useLoad } from "./ui.jsx";
 
-export default function Doctor() {
+// Sidebar sections; before registering there is only the registration form.
+export function useDoctorSections() {
+  const { session } = useApp();
+  const inbox = useInbox();
+  const profile = { id: "profile", label: "My details", icon: UserRound };
+  if (!inbox.people[session.address.toLowerCase()]?.details) return { sections: [profile], initial: "profile" };
+  return { sections: [{ id: "records", label: "Shared records", icon: FolderLock }, profile], initial: "records" };
+}
+
+export default function Doctor({ section }) {
   const { session } = useApp();
   const inbox = useInbox();
   const key = useLoad(() => encryptionKeyOf(session, session.address), [session]);
@@ -16,8 +26,8 @@ export default function Doctor() {
   if (!registered) return <div className="grid"><Profile registered={false} keyPublished={key.value !== null} /></div>;
   return (
     <div className="grid">
-      <SharedWithMe />
-      <Profile registered keyPublished />
+      {section === "records" && <SharedWithMe />}
+      {section === "profile" && <Profile registered keyPublished />}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 // Patient screen: health locker, records (open / share / revoke / history), policies, claim approval.
 import { useState } from "react";
 import { getAddress } from "ethers";
+import { FolderLock, ReceiptText, ShieldCheck, UserRound } from "lucide-react";
 import * as R from "../../lib/records.js";
 import { eventsOf, explainError, revertName, send, txUrl } from "./chain.js";
 import { BLOOD_GROUPS, policyNumber, procedureName } from "./catalog.js";
@@ -9,24 +10,50 @@ import { encryptionKeyOf, publishEncryptionKey, recordKeysFor } from "./keys.js"
 import RecordView from "./RecordView.jsx";
 import { approvedList, downloadJson, nameOf, rootOf, updateInbox, useInbox } from "./store.js";
 import {
-  ActionButton, Card, EditButton, Empty, ErrorNote, Field, Loading, Pill, PrivacyPanel, Receipt, Summary, Who, binder,
+  ActionButton, Card, ClaimSteps, EditButton, Empty, ErrorNote, Field, Loading, Pill, PrivacyPanel, Receipt, Summary, Who, binder,
   dateOf, dateTimeOf, nowSeconds, rupees, short, useApp, useLoad,
 } from "./ui.jsx";
 
-export default function Patient() {
+// Sidebar sections. Claims waiting for approval are counted, and open first.
+export function usePatientSections() {
+  const { session } = useApp();
+  const inbox = useInbox();
+  const me = lower(session);
+  const key = useLoad(() => encryptionKeyOf(session, session.address), [session]);
+  const profile = { id: "profile", label: "My details", icon: UserRound };
+  // Registered = encryption key on-chain (works in any browser), or just created here.
+  if (!key.value && !inbox.people[me]?.profile) return { sections: [profile], initial: "profile" };
+  const waiting = Object.values(inbox.claims).filter((c) => c.patient === me && c.status === "awaiting-patient").length;
+  return {
+    sections: [
+      { id: "records", label: "Records", icon: FolderLock },
+      { id: "insurance", label: "Insurance", icon: ShieldCheck },
+      { id: "claims", label: "Claims", icon: ReceiptText, count: waiting },
+      profile,
+    ],
+    initial: waiting ? "claims" : "records",
+  };
+}
+
+export default function Patient({ section }) {
   const { session } = useApp();
   const inbox = useInbox();
   const key = useLoad(() => encryptionKeyOf(session, session.address), [session]);
   if (key.value === undefined) return key.error ? <ErrorNote>{key.error}</ErrorNote> : <Loading />;
   if (key.value === null) return <div className="grid"><Locker published={false} /></div>;
   const mine = Object.values(inbox.claims).filter((c) => c.patient === lower(session));
+  const waiting = mine.some((c) => c.status === "awaiting-patient");
+  const done = mine.some((c) => c.status !== "awaiting-patient");
   return (
     <div className="grid">
-      {mine.some((c) => c.status === "awaiting-patient") && <ClaimApprovals />}
-      <Records />
-      <Locker published />
-      <Policies />
-      {mine.some((c) => c.status !== "awaiting-patient") && <ClaimHistory />}
+      {section === "records" && <Records />}
+      {section === "insurance" && <Policies />}
+      {section === "claims" && <>
+        {waiting && <ClaimApprovals />}
+        {done && <ClaimHistory />}
+        {!waiting && !done && <Card title="Claims" wide><Empty>No claims yet. When a hospital sends one, you approve it here and the contract pays the hospital.</Empty></Card>}
+      </>}
+      {section === "profile" && <Locker published />}
     </div>
   );
 }
@@ -117,7 +144,7 @@ function ClaimApprovals() {
   }
 
   return (
-    <Card title="Claims waiting for your approval" subtitle="A hospital prepared these. When you approve, the smart contract checks the proof and pays the hospital automatically."
+    <Card wide title="Claims waiting for your approval" subtitle="A hospital prepared these. When you approve, the smart contract checks the proof and pays the hospital automatically."
       badge={waiting.length > 0 && <Pill tone="warn">{waiting.length} waiting</Pill>}>
       {waiting.length === 0 ? <Empty>Nothing waiting.</Empty> : (
         <ul className="list">
@@ -126,6 +153,7 @@ function ClaimApprovals() {
               <div className="list-row">
                 <div><b>{rupees(c.amount)}</b> to <Who address={c.hospital} /><div className="muted small">{c.billNo ? `Bill ${c.billNo} · ` : ""}{procedureName(c.procedureCode)} on {dateOf(c.claimDate)} · proof made in {(c.proofMs / 1000).toFixed(1)} s</div></div>
               </div>
+              <ClaimSteps status={c.status} />
               <PrivacyPanel
                 publicItems={[`Amount ${rupees(c.amount)}`, "Your policy fingerprint", "Hospital's payout wallet"]}
                 privateItems={[procedureName(c.procedureCode), `Treatment date ${dateOf(c.claimDate)}`, "Your diagnosis and records"]}
@@ -182,7 +210,9 @@ function Records() {
   // Anyone can add a record to a locker (the contract doesn't restrict it), so flag records whose
   // sender isn't on the approved-hospital list, and trust that list only if it matches the on-chain root.
   const list = approvedList(inbox);
-  const approvedSenders = new Set(data.value && list.length > 0 && rootOf(list) === data.value.root ? list.map((h) => h.address) : []);
+  // Only judge senders when this browser holds the insurer's list and it matches the chain.
+  const knowsList = Boolean(data.value) && list.length > 0 && rootOf(list) === data.value.root;
+  const approvedSenders = new Set(knowsList ? list.map((h) => h.address) : []);
   const [opened, setOpened] = useState({});
 
   async function open(id, cid) {
@@ -204,7 +234,7 @@ function Records() {
               <div className="list-row">
                 <div>
                   <b>Record #{String(id)}</b> from <Who address={record.issuer} /> · {dateOf(record.createdAt)}
-                  {!approvedSenders.has(record.issuer.toLowerCase()) && <> <Pill tone="warn">not from an approved hospital</Pill></>}
+                  {knowsList && !approvedSenders.has(record.issuer.toLowerCase()) && <> <Pill tone="warn">not from an approved hospital</Pill></>}
                   <div className="muted small">
                     Locked file <code>{short(record.cid)}</code>
                     {storage.viewUrl && <> · <a href={storage.viewUrl(record.cid)} target="_blank" rel="noreferrer">see what IPFS stores ↗</a></>}
@@ -292,7 +322,7 @@ function Policies() {
   const [pick, setPick] = useState({});
 
   return (
-    <Card title="My insurance" subtitle="Your policy files (from the insurer). Share one with a hospital so it can prepare claims for you.">
+    <Card wide title="My insurance" subtitle="Your policy files (from the insurer). Share one with a hospital so it can prepare claims for you.">
       {mine.length === 0 ? <Empty>No policy yet. The insurer issues one (Insurer tab → Issue a policy).</Empty> : (
         <ul className="list">
           {mine.map((p) => {
@@ -339,7 +369,7 @@ function ClaimHistory() {
   const inbox = useInbox();
   const done = Object.values(inbox.claims).filter((c) => c.patient === lower(session) && c.status !== "awaiting-patient").sort((a, b) => Number(b.createdAt - a.createdAt));
   return (
-    <Card title="My claim history">
+    <Card title="My claim history" wide>
       {done.length === 0 ? <Empty>No claims yet.</Empty> : (
         <ul className="list">
           {done.map((c) => (
@@ -351,6 +381,7 @@ function ClaimHistory() {
                   {c.txHash && txUrl(session, c.txHash) && <a href={txUrl(session, c.txHash)} target="_blank" rel="noreferrer">tx ↗</a>}
                 </div>
               </div>
+              <ClaimSteps status={c.status} />
               {c.status === "paid" && (
                 <Receipt no={c.billNo ? `Bill ${c.billNo}` : `Claim ${short(c.id)}`} paidOn={c.settledAt ? dateTimeOf(c.settledAt) : "—"}
                   policy={<code>{short(c.policyCommitment)}</code>} paidTo={<Who address={c.hospital} />} amount={rupees(c.amount)}

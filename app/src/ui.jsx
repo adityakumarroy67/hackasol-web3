@@ -1,6 +1,6 @@
 // Shared screen pieces: app context, data loading, buttons, cards, formatting.
 import { Fragment, createContext, useContext, useEffect, useState } from "react";
-import { AlertCircle, BadgeCheck, Check, Eye, Lock, ShieldCheck } from "lucide-react";
+import { AlertCircle, BadgeCheck, Check, Eye, Lock, ShieldCheck, X } from "lucide-react";
 import { explainError, txUrl } from "./chain.js";
 import { nameOf, useInbox } from "./store.js";
 
@@ -63,7 +63,7 @@ export function Field({ label, hint, children }) {
 // A button that runs an async action, shows progress, then a success or plain-language error.
 // The action may return a success message (string) or { message, tx } to show a transaction link.
 export function ActionButton({ action, children, busyLabel = "Working…", disabled, tone = "primary", small }) {
-  const { refresh, session } = useApp();
+  const { refresh, session, notify } = useApp();
   const [state, setState] = useState({ busy: false, ok: null, error: null, tx: null });
   async function run() {
     setState({ busy: true, ok: null, error: null, tx: null });
@@ -71,6 +71,7 @@ export function ActionButton({ action, children, busyLabel = "Working…", disab
       const result = await action();
       const message = typeof result === "string" ? result : result?.message ?? null;
       setState({ busy: false, ok: message, error: null, tx: result?.tx ?? null });
+      if (result?.tx) notify?.({ message, tx: result.tx }); // a confirmed transaction also gets a toast
     } catch (e) {
       console.error(e);
       setState({ busy: false, ok: null, error: explainError(e), tx: null });
@@ -97,7 +98,53 @@ export function Who({ address }) {
   return <span className="who" title={address}>{name ? <b>{name}</b> : null} <code>{short(address)}</code></span>;
 }
 
-export const Loading = ({ what = "Loading" }) => <p className="muted"><span className="spinner" /> {what}…</p>;
+// Placeholder lines while blockchain data loads (screen readers hear "Loading").
+export const Loading = ({ what = "Loading" }) => (
+  <div className="skeleton" role="status" aria-label={what}><span /><span /><span /></div>
+);
+
+// One headline number with its label, for overview pages.
+export const Kpi = ({ icon: Icon, label, value, note }) => (
+  <div className="kpi"><span className="kpi-label"><Icon />{label}</span><b>{value}</b>{note && <small>{note}</small>}</div>
+);
+
+// Where a claim is in its journey: proof made → patient approves → contract verifies and pays.
+export function ClaimSteps({ status }) {
+  const steps = [
+    ["Proof created", "done"],
+    ["Patient approval", status === "awaiting-patient" ? "current" : status === "declined" ? "failed" : "done"],
+    ["Verified & paid", status === "paid" ? "done" : status === "rejected" ? "failed" : "todo"],
+  ];
+  return (
+    <ol className="claim-steps" aria-label="Claim progress">
+      {steps.map(([label, state]) => (
+        <li key={label} className={state}>
+          <span className="dot">{state === "done" ? <Check /> : state === "failed" ? <X /> : null}</span>{label}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+// Confirmed transactions, bottom right; each closes by itself after a few seconds.
+export function Toasts({ toasts, dismiss }) {
+  const { session } = useApp();
+  return (
+    <div className="toasts" aria-live="polite">
+      {toasts.map((t) => {
+        const link = session && txUrl(session, t.tx);
+        return (
+          <div key={t.id} className="toast">
+            <Check />
+            <div><p><b>Transaction confirmed</b></p>{t.message && <small>{t.message}</small>}
+              {link && <p><a href={link} target="_blank" rel="noreferrer">View on the explorer ↗</a></p>}</div>
+            <button onClick={() => dismiss(t.id)} aria-label="Close"><X /></button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 export const Empty = ({ children }) => <p className="empty">{children}</p>;
 export const ErrorNote = ({ children }) => <p className="err"><AlertCircle /><span>{children}</span></p>;
 
