@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>InsureTrust architecture and privacy threat model</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* InsureTrust light theme (app/src/styles.css): graphite text, one teal accent */
+  :root { --text: #171717; --text-2: #525252; --muted: #737373; --line: #e5e5e5; --accent: #0f766e; --bad: #b42318;
+          --priv: #ecf6f4; --privline: #b7dcd6; --enc: #f7f5ef; --encline: #e2dccd; --pub: #f4f4f5; --publine: #dcdce0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; width: 1800px; height: 1440px; background: #fff; color: var(--text); font: 400 15px/21px "IBM Plex Sans", sans-serif; }
+  .abs { position: absolute; }
+  .mono { font-family: "IBM Plex Mono", monospace; }
+  h1 { position: absolute; left: 48px; top: 40px; margin: 0; font-size: 34px; line-height: 42px; font-weight: 600; letter-spacing: -0.01em; }
+  .sub { left: 48px; top: 88px; color: var(--text-2); font-size: 17px; }
+  .legend { right: 48px; top: 50px; display: flex; gap: 10px; }
+  .tag { display: inline-block; font: 500 12px/20px "IBM Plex Mono", monospace; letter-spacing: 0.08em; padding: 0 8px; border-radius: 5px; border: 1px solid; }
+  .tag.priv { background: var(--priv); border-color: var(--privline); color: var(--accent); }
+  .tag.enc { background: var(--enc); border-color: var(--encline); color: #6b5d3f; }
+  .tag.pub { background: var(--pub); border-color: var(--publine); color: var(--text-2); }
+  .zone { border: 1px solid; border-radius: 14px; padding: 18px 20px; }
+  .zone.priv { background: var(--priv); border-color: var(--privline); }
+  .zone.enc { background: var(--enc); border-color: var(--encline); }
+  .zone.pub { background: var(--pub); border-color: var(--publine); }
+  .zone h2 { margin: 8px 0 2px; font-size: 20px; line-height: 26px; font-weight: 600; }
+  .zone .note { color: var(--text-2); font-size: 14px; line-height: 20px; margin-bottom: 12px; }
+  .item { background: #fff; border: 1px solid var(--line); border-radius: 9px; padding: 9px 12px; margin-top: 9px; }
+  .item b { display: block; font-weight: 600; font-size: 15px; }
+  .item span { color: var(--text-2); font-size: 14px; line-height: 19px; }
+  .item.mono b { font-family: "IBM Plex Mono", monospace; font-weight: 500; }
+  .roles { display: flex; gap: 6px; margin: 4px 0 2px; }
+  .roles span { font-size: 13px; font-weight: 500; padding: 2px 10px; border-radius: 99px; background: #fff; border: 1px solid var(--privline); color: var(--accent); }
+  .signals { font: 400 12.5px/18px "IBM Plex Mono", monospace; color: var(--text-2); margin-top: 10px; }
+  .flow { font-size: 14.5px; line-height: 20px; color: var(--text); text-align: center; background: #fff; padding: 0 6px; }
+  .flow i { font-style: normal; font-family: "IBM Plex Mono", monospace; color: var(--accent); font-size: 13.5px; }
+  .num { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font: 600 12px/1 "IBM Plex Sans"; margin-right: 6px; vertical-align: 1px; }
+  /* threat table */
+  .tm-title { left: 48px; top: 798px; font-size: 22px; line-height: 28px; font-weight: 600; }
+  .tm-sub { left: 300px; top: 803px; color: var(--text-2); font-size: 15px; }
+  table { position: absolute; left: 48px; top: 842px; width: 1704px; border-collapse: collapse; }
+  th { text-align: left; font: 500 12px/16px "IBM Plex Mono", monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid #d4d4d4; }
+  td { padding: 7px 10px; border-bottom: 1px solid var(--line); vertical-align: top; font-size: 14.5px; line-height: 20px; }
+  td:first-child { color: var(--muted); font-family: "IBM Plex Mono", monospace; width: 36px; }
+  td.th { font-weight: 600; width: 330px; }
+  td.how { width: 620px; color: var(--text); }
+  td.where { width: 250px; font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--text-2); }
+  td.test { color: var(--text-2); font-size: 13.5px; }
+  td.test::before { content: "✓ "; color: var(--accent); font-weight: 600; }
+  .limits { left: 48px; top: 1338px; width: 1704px; border: 1px solid #f1d1cc; background: #fdf4f2; border-radius: 12px; padding: 12px 18px; font-size: 14.5px; line-height: 22px; }
+  .limits b { color: var(--bad); font-weight: 600; margin-right: 8px; }
+</style>
+</head>
+<body>
+<h1>InsureTrust · architecture &amp; privacy threat model</h1>
+<div class="abs sub">What lives where (on-chain vs off-chain), how data moves between them, and what stops each attack.</div>
+<div class="abs legend"><span class="tag priv">PRIVATE</span><span class="tag enc">ENCRYPTED</span><span class="tag pub">PUBLIC</span></div>
+
+<!-- zone A: device -->
+<div class="abs zone priv" style="left:48px; top:140px; width:560px; height:620px">
+  <span class="tag priv">PRIVATE</span>
+  <h2>On each person's device (browser)</h2>
+  <div class="roles"><span>Patient</span><span>Hospital</span><span>Insurer</span><span>Doctor</span></div>
+  <div class="item"><b>Keys</b><span>X25519 key made from a wallet signature; hospital EdDSA signing key. Never leave the device.</span></div>
+  <div class="item"><b>Readable medical record</b><span>HL7 FHIR discharge summary + bill (ICD-10). Exists in plain form only here.</span></div>
+  <div class="item"><b>Web Crypto</b><span>AES-256-GCM encrypt / decrypt; each record key wrapped separately for every reader (X25519).</span></div>
+  <div class="item"><b>snarkjs prover</b><span>claim.wasm + claim.zkey → Groth16 proof π, about 1.4 s, no server.</span></div>
+  <div class="item"><b>Wallet (MetaMask)</b><span>Signs every transaction. The patient's own wallet submits the claim.</span></div>
+  <div class="item mono"><b>Private proof inputs</b><span>claim date · policy terms + salt · procedure code · claim ID · hospital signature · Merkle paths</span></div>
+</div>
+
+<!-- zone B: off-chain -->
+<div class="abs zone enc" style="left:728px; top:428px; width:380px; height:332px">
+  <span class="tag enc">ENCRYPTED</span>
+  <h2>Off-chain storage</h2>
+  <div class="note">IPFS (Kubo node) in the Docker setup; the hosted demo keeps the same files, same IDs, in the browser.</div>
+  <div class="item"><b>Ciphertext only</b><span>Encrypted file in, ciphertext out by content ID. Useless without a key.</span></div>
+  <div class="item"><b>Content-addressed (CID)</b><span>Any change to a file changes its ID and is detected.</span></div>
+</div>
+
+<!-- zone C: on-chain -->
+<div class="abs zone pub" style="left:1190px; top:140px; width:562px; height:620px">
+  <span class="tag pub">PUBLIC</span>
+  <h2>On-chain · Ethereum Sepolia</h2>
+  <div class="note">4 contracts, source verified on Blockscout and Sourcify. No medical data.</div>
+  <div class="item mono"><b>InsureTrust</b><span>Approved-hospital Merkle root · policy commitments → holder · used nullifiers · paid claims (amount, payout wallet, time) · ClaimSettled event</span></div>
+  <div class="item mono"><b>ClaimVerifier</b><span>Groth16 verifyProof(), generated by snarkjs from the circuit</span></div>
+  <div class="item mono"><b>HealthRecords</b><span>Record CIDs · keys wrapped per reader · patient-approved writers · grants with expiry · added / granted / viewed / revoked events</span></div>
+  <div class="item mono"><b>TestINR</b><span>ERC-20 test payout token (2 decimals, no real value)</span></div>
+  <div class="signals">8 public signals: amount · policy commitment · nullifier · hospital root · payout address · submission time · chain ID · contract</div>
+</div>
+
+<!-- flows -->
+<svg class="abs" style="left:0; top:0" width="1800" height="800">
+  <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" fill="#0f766e"/></marker></defs>
+  <g stroke="#0f766e" stroke-width="2" fill="none">
+    <path d="M612 205H1186" marker-end="url(#a)"/>
+    <path d="M612 270H1186" marker-end="url(#a)"/>
+    <path d="M612 335H1186" marker-end="url(#a)"/>
+    <path d="M1186 400H612" marker-end="url(#a)" stroke-dasharray="6 5"/>
+    <path d="M612 640H724" marker-start="url(#a)" marker-end="url(#a)"/>
+  </g>
+</svg>
+<div class="abs flow" style="left:636px; top:604px; width:80px; background:none"><span class="num" style="margin:0">1</span></div>
+<div class="abs flow" style="left:640px; top:182px; width:520px"><span class="num">2</span>proof π + 8 public signals → <i>submitClaim()</i>, from the patient's wallet</div>
+<div class="abs flow" style="left:640px; top:247px; width:520px"><span class="num">3</span>record CID + key for the patient → <i>addRecord()</i></div>
+<div class="abs flow" style="left:640px; top:312px; width:520px"><span class="num">4</span><i>setRecordWriter · grantAccess · revokeAccess · logView</i></div>
+<div class="abs flow" style="left:640px; top:377px; width:520px"><span class="num">5</span>events back to the screens; tINR paid to the hospital wallet</div>
+
+<!-- threat model -->
+<div class="abs tm-title">Threat model</div>
+<div class="abs tm-sub">Every threat below is blocked in code and checked by a named test in this repo.</div>
+<table>
+  <tr><th>#</th><th>Threat</th><th>How it is blocked</th><th>Enforced in</th><th>Checked by</th></tr>
+  <tr><td>T1</td><td class="th">Insurer learns the diagnosis</td><td class="how">Medical data stays on the device or encrypted; only commitments and the 8 public signals go on-chain</td><td class="where">claim.circom · design</td><td class="test">records: someone without access learns nothing</td></tr>
+  <tr><td>T2</td><td class="th">Unlisted hospital files a claim</td><td class="how">Hospital key + payout wallet proven inside the approved Merkle root; EdDSA signature over the claim</td><td class="where">claim.circom</td><td class="test">circuit: hospital not on the list; signed by another hospital</td></tr>
+  <tr><td>T3</td><td class="th">Claim outside the policy</td><td class="how">start ≤ claim date &lt; expiry, procedure in the covered set, amount ≤ limit, all range-checked</td><td class="where">claim.circom</td><td class="test">circuit: expired, not covered, over limit, overflow</td></tr>
+  <tr><td>T4</td><td class="th">Same claim paid twice</td><td class="how">Nullifier from policy + claim ID + salt; marked used before any payment</td><td class="where">InsureTrust.sol</td><td class="test">contract: same claim submitted twice</td></tr>
+  <tr><td>T5</td><td class="th">Copied proof redirects the payout</td><td class="how">The payout wallet is a public input bound inside the proof (front-running fails)</td><td class="where">claim.circom · InsureTrust.sol</td><td class="test">circuit + contract: payout wallet swapped</td></tr>
+  <tr><td>T6</td><td class="th">Proof replayed elsewhere</td><td class="how">Chain ID and contract address are bound in the proof and checked on-chain</td><td class="where">InsureTrust.sol</td><td class="test">contract: proof made for a different contract</td></tr>
+  <tr><td>T7</td><td class="th">Stranger submits the claim</td><td class="how">Only the registered policy holder (the patient) can submit</td><td class="where">InsureTrust.sol</td><td class="test">contract: only the policyholder can submit</td></tr>
+  <tr><td>T8</td><td class="th">Stranger reads a record</td><td class="how">AES-256-GCM ciphertext; record key wrapped per reader with X25519; tampered files rejected</td><td class="where">Web Crypto · HealthRecords.sol</td><td class="test">records: a shared key opens only for that person</td></tr>
+  <tr><td>T9</td><td class="th">Unapproved hospital writes records</td><td class="how">The patient approves record writers on-chain and can take approval back</td><td class="where">HealthRecords.sol</td><td class="test">records: only hospitals the patient allowed</td></tr>
+  <tr><td>T10</td><td class="th">Guessing values from a commitment</td><td class="how">Every commitment includes a random secret salt, so small value sets can't be brute-forced</td><td class="where">claim.circom</td><td class="test">circuit: policy terms must match the fingerprint</td></tr>
+</table>
+<div class="abs limits"><b>Known limits</b>Revoking can't erase a copy a doctor already saw · a unique price could hint at the procedure · one insurer admin key (multisig in production) · Groth16 phase-2 setup has one contribution (needs a multi-party ceremony) · addresses and timings on-chain are public · the hosted demo keeps encrypted files in the browser, not public IPFS</div>
+</body>
+</html>

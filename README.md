@@ -19,6 +19,11 @@ A hospital proves to an insurer, with a zero-knowledge proof, that a claim is va
 
 The insurer sees the amount, policy fingerprint and payout wallet only. It never sees the diagnosis, procedure, treatment date, prescriptions or the record.
 
+## Architecture & threat model
+![InsureTrust architecture and privacy threat model: what stays on the device, off-chain and on-chain, and how each threat is blocked](docs/architecture-threat-model.png)
+
+What lives on each device, off-chain and on-chain, how data moves between them, and how each threat (T1–T10) is blocked and which test checks it. Editable source: [`docs/architecture-threat-model.html`](docs/architecture-threat-model.html). Design notes: [ARCHITECTURE.md](ARCHITECTURE.md).
+
 ## Requirements checklist (from W3-01)
 - [x] ZK proof that the hospital is on the approved list (Merkle membership), plus the hospital's EdDSA signature over the claim
 - [x] ZK proof that the policy is active (policy start ≤ claim date < policy expiry)
@@ -27,7 +32,7 @@ The insurer sees the amount, policy fingerprint and payout wallet only. It never
 - [x] Records encrypted off-chain (IPFS), only content IDs and locked keys on-chain
 - [x] Patient grants and revokes doctor access
 - [x] Three-role UI: Patient → Hospital → Insurer (+ Doctor)
-- [ ] Architecture + privacy threat-model diagram (on-chain vs off-chain): in progress
+- [x] Architecture + privacy threat-model diagram (on-chain vs off-chain): [docs/architecture-threat-model.png](docs/architecture-threat-model.png)
 - [x] Bonus: time-bound access with an on-chain audit trail (grant / view / revoke)
 - [x] Bonus: HL7 FHIR-shaped records (Patient, Encounter, Condition with ICD-10, Procedure, MedicationRequest, Practitioner, Organization, Invoice)
 - [ ] Bonus: break-glass emergency access
